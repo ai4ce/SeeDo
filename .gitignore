@@ -1,0 +1,31 @@
+############################models#############################
+# GroundingDINO/
+GroundingDINO/
+
+# inpainter/
+inpainter/
+
+# segment_anything
+segment_anything/
+
+# tools
+tools/
+
+# Track-Anything
+Track-Anything/
+
+# tracker
+tracker/
+
+# pth model
+*.pth
+
+# .task file
+*.task
+
+############################media###############################
+# media/
+media/
+VLM_CaP/bowl/
+VLM_CaP/robotiq_2f_85/
+VLM_CaP/ur5e/

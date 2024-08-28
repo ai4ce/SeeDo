@@ -33,59 +33,6 @@ class FrameExtractor:
         # signal processing parameters
         self.gaussian_sigma = gaussian_sigma
         self.prominence = prominence
-
-    # def extract_frames(self):
-    #     '''
-    #     Extract the frames from the video.
-    #     '''
-    #     self.analyze_video()
-
-    #     self.all_possible_handedness = set(self.all_landmark_pos.keys()) # all possible handedness detected in the video
-
-    #     self.all_speeds = {}
-
-    #     for handedness in self.all_possible_handedness:
-    #         print(f"Calculating the speed curve of the {handedness} hand.")
-    #         self.all_speeds[handedness] = self.get_speed(self.all_landmark_pos[handedness])
-    #         print(f"Plotting the speed curve of the {handedness} hand.")
-    #         self.plot_speed(self.all_speeds[handedness], handedness)
-    #         print(f"Making the video of the {handedness} hand.")
-    #         self.make_video(handedness)
-        
-    #     print("Deciding which hand to focuse on.")
-    #     self.handedness = self.decide_handedness()
-    #     print(f"The decided handedness is {handedness}.")
-
-    #     print(f"Processing the speed curve of {handedness} hand.")
-    #     smoothed_curve = self.process_speed_curve()
-
-    #     print(f"Getting the peaks and valleys of the speed curve of {handedness} hand.")
-    #     peaks, valleys = self.get_peaks_valleys(smoothed_curve)
-
-    #     # select every three valleys as the frames to extract, not including the first one
-    #     selected_valleys = valleys
-
-    #     print(f"Plotting and making videos with smoothed {handedness} hand speed curve.")
-    #     self.plot_speed(speeds=smoothed_curve, 
-    #                     handedness=f'Smoothed {self.handedness}',
-    #                     selected_frame=selected_valleys)
-        
-    #     self.make_video(f'Smoothed {self.handedness}')
-
-    #     first_frame = self.get_frame(0)
-    #     cv2.imwrite(f'{str(self.selected_folder)}/{0}.jpg', first_frame)
-    #     for valley in selected_valleys:
-    #         frame = self.get_frame(valley)
-    #         cv2.imwrite(f'{str(self.selected_folder)}/{valley}.jpg', frame)
-    #     print(f"The selected valley frames are: {selected_valleys}")
-
-    #     for valley in valleys:
-    #         frame = self.get_frame(valley)
-    #         cv2.imwrite(f'{str(self.all_valleys_folder)}/{valley}.jpg', frame)
-    #     print(f"ALl valley frames are: {valleys}")
-
-    #     self.cap.release()
-    #     print("All done!")
        
     def extract_frames(self):
         '''
@@ -142,6 +89,7 @@ class FrameExtractor:
 
         self.cap.release()
         print("All done!")
+        return selected_valleys
 
     def analyze_video(self):
         '''
@@ -496,7 +444,8 @@ def main(args):
     prominence = args_parsed.prominence
 
     frame_extractor = FrameExtractor(video_path, output_dir, gaussian_sigma, prominence)
-    frame_extractor.extract_frames()
+    selected_frames_index = frame_extractor.extract_frames()
+    return selected_frames_index
 
 if __name__ == '__main__':
     args = ArgumentParser()

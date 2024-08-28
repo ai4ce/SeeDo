@@ -97,6 +97,12 @@ def get_object_list(selected_frames):
     # first prompt to get objects in the environment
     prompt_messages_state = [
         {
+            "role": "system",
+            "content": [
+                "You are a visual object detector. Your task is to count and identify the objects in the provided image that are on the desk. Focus on objects classified as grasped_objects and containers."
+            ],
+        },
+        {
             "role": "user",
             "content": [
                 "There are two kinds of objects, grasped_objects and containers in the environment. We only care about objects on the desk.",
@@ -168,6 +174,12 @@ def process_images(selected_frames):
         input_frame_pick = selected_frames[i:i+1]
         prompt_messages_relevance_pick = [
             {
+                "role": "system",
+                "content": [
+                    "You are an operations inspector. You need to check whether the hand in operation is holding an object."
+                ],
+            },
+            {
                 "role": "user",
                 "content": [
                     "This is a picture from a pick-and-drop task. Please determine if the hand is holding an object.", 
@@ -184,6 +196,12 @@ def process_images(selected_frames):
 
         # which to pick
         prompt_messages_pick = [
+            {
+                "role": "system",
+                "content": [
+                    "You are an operation inspector. You need to check which object is being picked in a pick-and-drop task."
+                ],
+            },
             {
                 "role": "user",
                 "content": [
@@ -210,6 +228,12 @@ def process_images(selected_frames):
         input_frame_drop = selected_frames[i:i+1]
         prompt_messages_relevance_drop = [
             {
+                "role": "system",
+                "content": [
+                    "You are an operations inspector. You need to check whether the hand in operation is holding an object."
+                ],
+            },
+            {
                 "role": "user",
                 "content": [
                     "This is a picture from a pick-and-drop task. Please determine if the hand is holding an object.",
@@ -227,9 +251,15 @@ def process_images(selected_frames):
         # closest object 
         prompt_messages_closest = [
             {
+                "role": "system",
+                "content": [
+                    "You are an operation inspector. You need to find the reference object for the placement location of the picked object in the pick-and-place process."
+                ],
+            },
+            {
                 "role": "user",
                 "content": [
-                    f"This is a picture describing the drop state of a pick-and-drop task. The objects in the environment are {obj_list}. {object_picked} is being dropped by a human hand or robot gripper now.",
+                    f"This is a picture describing the drop state of a pick-and-place task. The objects in the environment are {obj_list}. {object_picked} is being dropped by a human hand or robot gripper now.",
                     "Based on the input picture and object list, answer:",
                     f"1. Which object in the rest of object list is closest to {object_picked}",
                     "You should respond in the format of the following example without any additional information or reason steps:",
@@ -285,7 +315,7 @@ client = OpenAI(api_key=mykey)
 
 ###################################################################################
 # 选择帧路径
-folder_path = '/home/bw2716/VLMTutor/realworld_demo3/selected_frames'
+folder_path = '/home/bw2716/VLMTutor/media/output_demo/fruit_container_task/long_demo1/selected_frames'
 # 存储图像帧的列表
 selected_raw_frames1 = []
 # 获取并排序文件夹中的所有图像

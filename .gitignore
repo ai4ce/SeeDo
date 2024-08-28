@@ -20,9 +20,6 @@ tracker/
 # pth model
 *.pth
 
-# .task file
-*.task
-
 ############################media###############################
 # media/
 media/

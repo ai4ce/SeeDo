@@ -1,4 +1,3 @@
-# a test version of branch sam2_contour
 import PIL
 from tqdm import tqdm
 

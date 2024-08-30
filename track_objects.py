@@ -58,12 +58,16 @@ def get_object_list(video_path):
     video = cv2.VideoCapture(video_path)
 
     base64Frames = []
-    while video.isOpened():
+    frame_count = 0
+    max_frames = 2  # 只处理前2帧
+
+    while video.isOpened() and frame_count < max_frames:
         success, frame = video.read()
         if not success:
             break
         _, buffer = cv2.imencode(".jpg", frame)
         base64Frames.append(base64.b64encode(buffer).decode("utf-8"))
+        frame_count += 1
 
     video.release()
     print(len(base64Frames), "frames read.")
@@ -172,9 +176,9 @@ if DEVICE.type != 'cpu':
     pipe = pipe.to("cuda")
 
 # replace the path with your own video_path
-video_path = ('/home/bw2716/VLMTutor/media/input_demo/fruit_container_demo/long_demo1.mp4')
+video_path = ('/home/bw2716/VLMTutor/media/input_demo/fruit_container_demo/long_demo10.mp4')
 sample_freq = 16
-output_video_path = '/home/bw2716/VLMTutor/media/output_demo/examples/long_demo1_sam2.mp4'
+output_video_path = '/home/bw2716/VLMTutor/media/intermediate_demo/long_demo10_sam2_contour.mp4'
 
 frames =read_video(video_path)
 
@@ -183,6 +187,8 @@ object_list_response = get_object_list(video_path)
 num, obj_list = extract_num_object(object_list_response)
 print(f"Generated prompt: {obj_list}")
 TEXT_PROMPT = ", ".join(obj_list)
+# TEXT_PROMPT = 'red tomato, orange carrot, red pepper, yellow corn, purple eggplant, white bowl, white bowl, glass container'
+# TEXT_PROMPT = 'cube'
 
 BOX_TRESHOLD = 0.3
 TEXT_TRESHOLD = 0.25
@@ -413,8 +419,15 @@ for out_frame_idx, out_obj_ids, out_mask_logits in predictor.propagate_in_video(
 
 '========================================================='
 
-color_list = {0: np.array([255, 0, 0]), 1: np.array([0, 255, 0]), 2: np.array([0, 0, 255]), 3: np.array([0, 125, 125]),
-              4: np.array([125, 0, 125]), 5: np.array([125, 125, 0])}
+color_list = {
+    0: np.array([255, 0, 0]),      # 红色
+    1: np.array([0, 255, 0]),      # 绿色
+    2: np.array([0, 0, 255]),      # 蓝色
+    3: np.array([0, 125, 125]),    # 青绿色
+    4: np.array([125, 0, 125]),    # 紫色
+    5: np.array([125, 125, 0]),    # 黄色
+    6: np.array([255, 165, 0])     # 橙色
+}
 
 def vis_add_mask(image, mask, color, alpha):
     color = color_list[color]
@@ -422,7 +435,7 @@ def vis_add_mask(image, mask, color, alpha):
     image[mask] = image[mask] * (1 - alpha) + color * alpha
     return image.astype('uint8')
 
-def contour_painter(input_image, input_mask, mask_color=5, mask_alpha=0.7, contour_color=1, contour_width=3):
+def contour_painter(input_image, input_mask, mask_color=5, mask_alpha=0.7, contour_color=0, contour_width=3):
     assert input_image.shape[:2] == input_mask.shape, 'different shape between image and mask'
     # 0: background, 1: foreground
     mask = np.clip(input_mask, 0, 1).astype(np.uint8)

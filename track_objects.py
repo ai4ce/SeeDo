@@ -176,9 +176,9 @@ if DEVICE.type != 'cpu':
     pipe = pipe.to("cuda")
 
 # replace the path with your own video_path
-video_path = ('/home/bw2716/VLMTutor/media/input_demo/fruit_container_demo/long_demo10.mp4')
+video_path = ('/home/bw2716/VLMTutor/media/input_demo/fruit_container_demo/long_demo15.mp4')
 sample_freq = 16
-output_video_path = '/home/bw2716/VLMTutor/media/intermediate_demo/long_demo10_sam2_contour.mp4'
+output_video_path = '/home/bw2716/VLMTutor/media/intermediate_demo/long_demo15_sam2_contour.mp4'
 
 frames =read_video(video_path)
 
@@ -426,7 +426,8 @@ color_list = {
     3: np.array([0, 125, 125]),    # 青绿色
     4: np.array([125, 0, 125]),    # 紫色
     5: np.array([125, 125, 0]),    # 黄色
-    6: np.array([255, 165, 0])     # 橙色
+    6: np.array([255, 165, 0]),    # 橙色
+    7: np.array([255, 105, 180])   # 粉红色
 }
 
 def vis_add_mask(image, mask, color, alpha):
@@ -435,7 +436,7 @@ def vis_add_mask(image, mask, color, alpha):
     image[mask] = image[mask] * (1 - alpha) + color * alpha
     return image.astype('uint8')
 
-def contour_painter(input_image, input_mask, mask_color=5, mask_alpha=0.7, contour_color=0, contour_width=3):
+def contour_painter(input_image, input_mask, mask_color=5, mask_alpha=0.7, contour_color=1, contour_width=3):
     assert input_image.shape[:2] == input_mask.shape, 'different shape between image and mask'
     # 0: background, 1: foreground
     mask = np.clip(input_mask, 0, 1).astype(np.uint8)
@@ -461,6 +462,7 @@ for i in range(len(frame_names)):
     img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
     for k in video_segments[i].keys():
         # img[video_segments[i][k][0]] = color_list[k]
+        # print(f"Processing segment with key: {k}")  # 打印当前键值
         img = contour_painter(img, video_segments[i][k][0], contour_color=k)
     painted_frames.append(img)
 

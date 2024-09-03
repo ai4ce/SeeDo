@@ -176,9 +176,9 @@ if DEVICE.type != 'cpu':
     pipe = pipe.to("cuda")
 
 # replace the path with your own video_path
-video_path = ('/home/bw2716/VLMTutor/media/input_demo/fruit_container_demo/long_demo15.mp4')
+video_path = ('/home/bw2716/VLMTutor/media/input_demo/fruit_container_demo/long_demo12.mp4')
 sample_freq = 16
-output_video_path = '/home/bw2716/VLMTutor/media/intermediate_demo/long_demo15_sam2_contour.mp4'
+output_video_path = '/home/bw2716/VLMTutor/media/intermediate_demo/long_demo12_sam2_contour.mp4'
 
 frames =read_video(video_path)
 

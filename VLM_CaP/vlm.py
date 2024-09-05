@@ -99,19 +99,20 @@ def get_object_list(selected_frames):
         {
             "role": "system",
             "content": [
-                "You are a visual object detector. Your task is to count and identify the objects in the provided image that are on the desk. Focus on objects classified as grasped_objects and containers."
+                "You are a visual object detector. Your task is to count and identify the objects in the provided image that are on the desk. Focus on objects classified as grasped_objects and containers. The objects have been outlined with contours of different colors for easier distinction."
             ],
         },
         {
             "role": "user",
             "content": [
-                "There are two kinds of objects, grasped_objects and containers in the environment. We only care about objects on the desk.",
+                "There are two kinds of objects, grasped_objects and containers in the environment. We only care about objects on the desk. The objects have been outlined with contours of different colors for easier distinction.",
+                "Notice that there might be similar objects. You are supposed to use the color of its contour to distinguish between similar objects."
                 "Based on the input picture, answer:",
                 "1. How many objects are there in the environment?",
                 "2. What are these objects?",
                 "You should respond in the format of the following example:",
                 "Number: 1",
-                "Objects: red pepper, red tomato, white bowl",
+                "Objects: red pepper, red tomato, white bowl (yellow contour), white bowl (red contour)",
                 *map(lambda x: {"image": x, "resize": 768}, selected_frames[0:1]),  # use first picture for environment objects
             ],
         },
@@ -147,11 +148,11 @@ def extract_keywords_drop(response):
         print("Error extracting drop keyword from response:", response)
         return None
 
-def extract_keywords_closest(response):
+def extract_keywords_reference(response):
     try:
         return response.split(': ')[1]
     except IndexError:
-        print("Error extracting closest object from response:", response)
+        print("Error extracting reference object from response:", response)
         return None
 
 def is_frame_relevant(response):
@@ -176,7 +177,7 @@ def process_images(selected_frames):
             {
                 "role": "system",
                 "content": [
-                    "You are an operations inspector. You need to check whether the hand in operation is holding an object."
+                    "You are an operations inspector. You need to check whether the hand in operation is holding an object. The objects have been outlined with contours of different colors for easier distinction."
                 ],
             },
             {
@@ -199,13 +200,13 @@ def process_images(selected_frames):
             {
                 "role": "system",
                 "content": [
-                    "You are an operation inspector. You need to check which object is being picked in a pick-and-drop task."
+                    "You are an operation inspector. You need to check which object is being picked in a pick-and-drop task. The objects have been outlined with contours of different colors for easier distinction."
                 ],
             },
             {
                 "role": "user",
                 "content": [
-                    f"This is a picture describing the pick state of a pick-and-drop task. The objects in the environment are {obj_list}. One of the objects is being picked by a human hand or robot gripper now.",
+                    f"This is a picture describing the pick state of a pick-and-drop task. The objects in the environment are {obj_list}. One of the objects is being picked by a human hand or robot gripper now. The objects have been outlined with contours of different colors for easier distinction.",
                     "Based on the input picture and object list, answer:",
                     "1. Which object is being picked",
                     "You should respond in the format of the following example:",
@@ -230,7 +231,7 @@ def process_images(selected_frames):
             {
                 "role": "system",
                 "content": [
-                    "You are an operations inspector. You need to check whether the hand in operation is holding an object."
+                    "You are an operations inspector. You need to check whether the hand in operation is holding an object. The objects have been outlined with contours of different colors for easier distinction."
                 ],
             },
             {
@@ -249,11 +250,11 @@ def process_images(selected_frames):
             continue
 
         # closest object 
-        prompt_messages_closest = [
+        prompt_messages_reference = [
             {
                 "role": "system",
                 "content": [
-                    "You are an operation inspector. You need to find the reference object for the placement location of the picked object in the pick-and-place process."
+                    "You are an operation inspector. You need to find the reference object for the placement location of the picked object in the pick-and-place process. Notice that the reference object can vary based on the task. If this is a storage task, the reference object should be the container into which the items are stored. If this is a stacking task, the reference object should be the object that best expresses the orientation of the arrangement. The objects have been outlined with contours of different colors for easier distinction."
                 ],
             },
             {
@@ -261,43 +262,42 @@ def process_images(selected_frames):
                 "content": [
                     f"This is a picture describing the drop state of a pick-and-place task. The objects in the environment are {obj_list}. {object_picked} is being dropped by a human hand or robot gripper now.",
                     "Based on the input picture and object list, answer:",
-                    f"1. Which object in the rest of object list is closest to {object_picked}",
+                    f"1. Which object in the rest of object list do you choose as a reference object to {object_picked}",
                     "You should respond in the format of the following example without any additional information or reason steps:",
-                    "Closest Object: red block",
+                    "Reference Object: red block",
                     *map(lambda x: {"image": x, "resize": 768}, input_frame_drop),
                 ],
             },
         ]
-        response_closest = call_openai_api(prompt_messages_closest)
-        print(response_closest)
-        object_closest = extract_keywords_closest(response_closest)
+        response_reference = call_openai_api(prompt_messages_reference)
+        print(response_reference)
+        object_reference = extract_keywords_reference(response_reference)
 
         # and relative position
         prompt_messages_relationship = [
             {
                 "role": "system",
                 "content": [
-                    "You are a VLMTutor. You will describe the drop state of a pick-and-drop task from a demo picture. You must pay specific attention to the spatial relationship between interested objects in the picture and be correct and accurate with directions.",
-                    "Be careful with the word adjacent. You must only use this word when the objects are physically in touch.",
+                    "You are a VLMTutor. You will describe the drop state of a pick-and-drop task from a demo picture. You must pay specific attention to the spatial relationship between picked object and reference object in the picture and be correct and accurate with directions. The objects have been outlined with contours of different colors for easier distinction.",
+                    "Pay attention to if the picked object and reference object are in contact. You must specify if they are.",
                 ],
                 "role": "user",
                 "content": [
-                    f"This is a picture describing the drop state of a pick-and-drop task. The objects in the environment are object list: {obj_list}. {object_picked} is being dropped by a human hand or robot gripper now.",
-                    f"It is being dropped somewhere near {object_closest}. Based on the input picture and object list, answer:",
-                    f"Drop {object_picked} to which relative position from the {object_closest}? You need to mention the name of objects in your answer",
-                    "There are totally ten kinds of relative position, and the direction means the visual direction of the picture",
-                    f"1. In (({object_picked} is contained in the {object_closest})"
-                    f"2. above ({object_picked} is located in higher position than the {object_closest}, and are not in contact or overlaoped)",
-                    f"3. adjacent above ({object_picked} is located in higher position than the {object_closest}, and are in contact or overlapped)",
-                    f"4. below ({object_picked} is located in lower position than the {object_closest}, and are not in contact or overlapped)",
-                    f"5. adjacent below ({object_picked} is located in lower position than the {object_closest}, and are in contact or overlapped)",
-                    f"6. On top of ({object_picked} is stacked on the {object_closest}, {object_closest} supports {object_picked})",
-                    "7. to the left (meaning the two blocks are not in contact or overlapped)",
-                    "8. to the right (meaning the two blocks are not in contact or overlapped)",
-                    "9. adjacent to the left (meaning the two blocks are in contact or overlapped)",
-                    "10. adjacent to the right (meaning the two blocks are in contact or overlapped)",
+                    f"This is a picture describing the drop state of a pick-and-drop task. The objects in the environment are object list: {obj_list}. {object_picked} is being dropped by a human hand or robot gripper now. The objects have been outlined with contours of different colors for easier distinction.",
+                    f"It is being dropped somewhere near {object_reference}. Based on the input picture and object list, answer:",
+                    f"Drop {object_picked} to which relative position to the {object_reference}? You need to mention the name of objects in your answer",
+                    f"There are totally six kinds of relative position, and the direction means the visual direction of the picture.",
+                    f"1. In (({object_picked} is contained in the {object_reference})"
+                    f"2. On top of ({object_picked} is stacked on the {object_reference}, {object_reference} supports {object_picked})",
+                    f"3. above ({object_picked} is located in higher position than the {object_reference})",
+                    f"4. below ({object_picked} is located in lower position than the {object_reference})",
+                    "5. to the left",
+                    "6. to the right",
+                    f"You must choose one relative position first. For the 'above','below','to the left','to the right' direction, If the {object_picked} and {object_reference} are in contact or overlapped, you must specify '(in contact)' afertwards"
                     "You should respond in the format of the following example without any additional information or reason steps, be sure to mention the object picked and closest object",
-                    f"Drop {object_picked} to the left of the {object_closest}",
+                    f"Drop yellow corn to the left of the red chili",
+                    f"Drop red chili in the white bowl"
+                    f"Drop red tomato to the right of the purple eggplant (in contact)",
                     *map(lambda x: {"image": x, "resize": 768}, input_frame_drop),
                 ],
             },
@@ -316,22 +316,22 @@ client = OpenAI(api_key=mykey)
 ###################################################################################
 # 选择帧路径
 folder_path = '/home/bw2716/VLMTutor/media/output_demo/fruit_container_task/long_demo1/selected_frames'
-# 存储图像帧的列表
-selected_raw_frames1 = []
-# 获取并排序文件夹中的所有图像
-filenames = sorted(
-    os.listdir(folder_path),
-    key=lambda x: int(''.join(filter(str.isdigit, os.path.splitext(x)[0])))
-)
-# 遍历排序后的文件名列表
-for filename in filenames:
-    if filename.endswith('.jpg') or filename.endswith('.png'):
-        file_path = os.path.join(folder_path, filename)
-        # 使用 OpenCV 读取图像
-        cv2_image = cv2.imread(file_path)
-        selected_raw_frames1.append(cv2_image)
+# # 存储图像帧的列表
+# selected_raw_frames1 = []
+# # 获取并排序文件夹中的所有图像
+# filenames = sorted(
+#     os.listdir(folder_path),
+#     key=lambda x: int(''.join(filter(str.isdigit, os.path.splitext(x)[0])))
+# )
+# # 遍历排序后的文件名列表
+# for filename in filenames:
+#     if filename.endswith('.jpg') or filename.endswith('.png'):
+#         file_path = os.path.join(folder_path, filename)
+#         # 使用 OpenCV 读取图像
+#         cv2_image = cv2.imread(file_path)
+#         selected_raw_frames1.append(cv2_image)
 
-selected_frames1 = extract_frame_list(selected_raw_frames1)
+# selected_frames1 = extract_frame_list(selected_raw_frames1)
 
 # 显示前5帧
 # for i in range(min(5, len(selected_frames1))):
@@ -343,6 +343,62 @@ selected_frames1 = extract_frame_list(selected_raw_frames1)
 
 #########################################################################
 # first get the object list
+def convert_video_to_mp4(input_path, output_path):
+    """
+    Converts the input video file to H.264 encoded .mp4 format using ffmpy.
+    """
+    ff = ffmpy.FFmpeg(
+        inputs={input_path: None},
+        outputs={output_path: '-c:v libx264 -crf 23 -preset fast'}
+    )
+    ff.run()
+    print(f"Video converted successfully: {output_path}")
+
+# video path
+video_path = '/home/bw2716/VLMTutor/media/intermediate_demo/long_demo1_sam2_contour.mp4'
+converted_video_path = '/home/bw2716/VLMTutor/media/intermediate_demo/long_demo1_converted_sam2_contour.mp4'
+# list to store key frames
+selected_raw_frames1 = []
+# list to store key frame indexes
+selected_frame_index = [0, 34, 72, 109, 147, 188, 239, 283, 326]
+
+# Convert the video to H.264 encoded .mp4 format
+convert_video_to_mp4(video_path, converted_video_path)
+
+# Open the converted video
+cap = cv2.VideoCapture(converted_video_path)
+
+# Manually calculate total number of frames
+actual_frame_count = 0
+while cap.isOpened():
+    ret, frame = cap.read()
+    if not ret:
+        break
+    actual_frame_count += 1
+
+# Reset the capture to the beginning of the video
+cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+
+print(f"Actual frame count: {actual_frame_count}")
+
+# Iterate through index list and get the frame list
+for index in selected_frame_index:
+    if index < actual_frame_count:
+        cap.set(cv2.CAP_PROP_POS_FRAMES, index)
+        ret, cv2_image = cap.read()
+        if ret:
+            selected_raw_frames1.append(cv2_image)
+        else:
+            print(f"Failed to retrieve frame at index {index}")
+    else:
+        print(f"Frame index {index} is out of range for this video.")
+
+# Release video capture object
+cap.release()
+
+# 调用处理函数
+selected_frames1 = extract_frame_list(selected_raw_frames1)
+
 response_state = get_object_list(selected_frames1)
 num, obj_list = extract_num_object(response_state)
 print("Number of objects:", num)

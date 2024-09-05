@@ -17,6 +17,9 @@ from openai import OpenAI
 import base64
 from io import BytesIO
 from VLM_CaP.src.key import mykey
+from collections import Counter
+from diffusers import StableDiffusionInpaintPipeline
+from sam2.build_sam import build_sam2_video_predictor
 
 # Grounding DINO
 from GroundingDINO.groundingdino.models import build_model
@@ -43,7 +46,7 @@ def image_to_base64(image):
     img_str = base64.b64encode(buffered.getvalue()).decode("utf-8")
     return img_str
 
-def call_openai_api(prompt_messages):
+def call_openai_api(prompt_messages, client):
     params = {
         "model": "gpt-4o",
         "messages": prompt_messages,
@@ -53,7 +56,7 @@ def call_openai_api(prompt_messages):
     result = client.chat.completions.create(**params)
     return result.choices[0].message.content
 
-def get_object_list(video_path):
+def get_object_list(video_path, client):
     # 使用第一帧进行编码
     video = cv2.VideoCapture(video_path)
 
@@ -94,7 +97,7 @@ def get_object_list(video_path):
         },
     ]
     
-    response_state = call_openai_api(prompt_messages_state)
+    response_state = call_openai_api(prompt_messages_state, client)
     return response_state
 
 def extract_num_object(response_state):
@@ -144,68 +147,6 @@ def read_video(video_path):
         frames.append(frame)
     return frames
 
-# 设置OpenAI客户端
-client = OpenAI(api_key=mykey)
-
-ckpt_repo_id = "ShilongLiu/GroundingDINO"
-ckpt_filenmae = "groundingdino_swinb_cogcoor.pth"
-ckpt_config_filename = "GroundingDINO_SwinB.cfg.py"
-
-groundingdino_model = load_model_hf(ckpt_repo_id, ckpt_filenmae, ckpt_config_filename)
-
-DEVICE = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
-
-sam_checkpoint = 'sam_vit_h_4b8939.pth'
-sam = build_sam(checkpoint=sam_checkpoint)
-sam.to(device=DEVICE)
-sam_predictor = SamPredictor(sam)
-
-from diffusers import StableDiffusionInpaintPipeline
-
-if DEVICE.type == 'cpu':
-    float_type = torch.float32
-else:
-    float_type = torch.float16
-
-pipe = StableDiffusionInpaintPipeline.from_pretrained(
-    "stabilityai/stable-diffusion-2-inpainting",
-    torch_dtype=float_type,
-)
-
-if DEVICE.type != 'cpu':
-    pipe = pipe.to("cuda")
-
-# replace the path with your own video_path
-video_path = ('/home/bw2716/VLMTutor/media/input_demo/fruit_container_demo/long_demo12.mp4')
-sample_freq = 16
-output_video_path = '/home/bw2716/VLMTutor/media/intermediate_demo/long_demo12_sam2_contour.mp4'
-
-frames =read_video(video_path)
-
-object_list_response = get_object_list(video_path)
-
-num, obj_list = extract_num_object(object_list_response)
-print(f"Generated prompt: {obj_list}")
-TEXT_PROMPT = ", ".join(obj_list)
-# TEXT_PROMPT = 'red tomato, orange carrot, red pepper, yellow corn, purple eggplant, white bowl, white bowl, glass container'
-# TEXT_PROMPT = 'cube'
-
-BOX_TRESHOLD = 0.3
-TEXT_TRESHOLD = 0.25
-
-# image_source, image = load_image(local_image_path)
-image_source, image = load_image_from_array(frames[0])
-
-boxes, logits, phrases = predict(
-    model=groundingdino_model,
-    image=image,
-    caption=TEXT_PROMPT,
-    box_threshold=BOX_TRESHOLD,
-    text_threshold=TEXT_TRESHOLD,
-    device=DEVICE
-)
-
-
 def my_annotate(image_source: np.ndarray, boxes: torch.Tensor, logits: torch.Tensor, phrases) -> np.ndarray:
     h, w, _ = image_source.shape
     boxes = boxes * torch.Tensor([w, h, w, h])
@@ -228,59 +169,6 @@ def my_annotate(image_source: np.ndarray, boxes: torch.Tensor, logits: torch.Ten
         cv2.putText(annotated_frame, label, (x1, y1 - 2), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 0), 1)
 
     return annotated_frame
-
-
-annotated_frame = my_annotate(image_source=image_source, boxes=boxes, logits=logits, phrases=phrases)
-annotated_frame = annotated_frame[..., ::-1]  # BGR to RGB
-
-sam_predictor.set_image(image_source)
-
-H, W, _ = image_source.shape
-boxes_xyxy = box_ops.box_cxcywh_to_xyxy(boxes) * torch.Tensor([W, H, W, H])
-
-transformed_boxes = sam_predictor.transform.apply_boxes_torch(boxes_xyxy, image_source.shape[:2]).to(DEVICE)
-masks, _, _ = sam_predictor.predict_torch(
-    point_coords=None,
-    point_labels=None,
-    boxes=transformed_boxes,
-    multimask_output=False,
-)
-
-masks = masks.cpu()
-masks_np = masks.numpy()
-
-h, w = masks_np[0][0].shape
-pixel_cnt = h * w
-indices_to_keep = np.ones(len(masks_np), dtype=bool)
-for i in range(len(masks_np)):
-    # print(np.sum(masks_np[i][0]), pixel_cnt)
-    if (np.sum(masks_np[i][0]) > pixel_cnt * 0.3):
-        indices_to_keep[i] = False
-masks_np = masks_np[indices_to_keep]
-
-# input('----------------------')
-del groundingdino_model
-del sam
-del sam_predictor
-del pipe
-
-torch.cuda.empty_cache()
-gc.collect()
-
-# use bfloat16 for the entire notebook
-torch.autocast(device_type="cuda", dtype=torch.bfloat16).__enter__()
-
-if torch.cuda.get_device_properties(0).major >= 8:
-    # turn on tfloat32 for Ampere GPUs (https://pytorch.org/docs/stable/notes/cuda.html#tensorfloat-32-tf32-on-ampere-devices)
-    torch.backends.cuda.matmul.allow_tf32 = True
-    torch.backends.cudnn.allow_tf32 = True
-
-from sam2.build_sam import build_sam2_video_predictor
-
-sam2_checkpoint = "segment-anything-2/checkpoints/sam2_hiera_large.pt"
-model_cfg = "sam2_hiera_l.yaml"
-
-predictor = build_sam2_video_predictor(model_cfg, sam2_checkpoint, device='cuda:0')
 
 def show_mask(mask, ax, obj_id=None, random_color=False):
     if random_color:
@@ -330,93 +218,6 @@ def video2jpg(video_path, output_folder, sample_freq=1):
         cap.release()
         print(f"All frames have been saved to {output_folder}.")
 
-'=================== First Round for sampling ==================='
-
-video_dir = os.path.dirname(video_path) + f'/sample_freq_{sample_freq}_' + video_path.split('/')[-1].split('.')[0]
-if not os.path.exists(video_dir):
-    video2jpg(video_path, video_dir, sample_freq)
-
-# input('-------------------')
-# scan all the JPEG frame names in this directory
-frame_names = [
-    p for p in os.listdir(video_dir)
-    if os.path.splitext(p)[-1] in [".jpg", ".jpeg", ".JPG", ".JPEG"]
-]
-frame_names.sort(key=lambda p: int(os.path.splitext(p)[0]))
-
-inference_state = predictor.init_state(video_path=video_dir)
-predictor.reset_state(inference_state)
-
-prompts = {}  # hold all the clicks we add for visualization
-
-ann_frame_idx = 0  # the frame index we interact with
-ann_obj_id = 1  # give a unique id to each object we interact with (it can be any integers)
-
-for i in range(len(masks_np)):
-    _, out_obj_ids, out_mask_logits = predictor.add_new_mask(
-        inference_state=inference_state,
-        frame_idx=ann_frame_idx,
-        obj_id=i,
-        mask=masks_np[i][0]
-    )
-
-# run propagation throughout the video and collect the results in a dict
-video_segments = {}  # video_segments contains the per-frame segmentation results
-for out_frame_idx, out_obj_ids, out_mask_logits in predictor.propagate_in_video(inference_state):
-    video_segments[out_frame_idx] = {
-        out_obj_id: (out_mask_logits[i] > 0.0).cpu().numpy()
-        for i, out_obj_id in enumerate(out_obj_ids)
-    }
-
-'========================================================='
-
-'=================== Second Round for process whole video ==================='
-del inference_state
-del predictor
-torch.cuda.empty_cache()
-torch.cuda.set_device(1)
-
-# predictor._reset_tracking_results(inference_state)
-
-predictor = build_sam2_video_predictor(model_cfg, sam2_checkpoint)
-
-video_dir = os.path.dirname(video_path) + '/' + video_path.split('/')[-1].split('.')[0]
-if not os.path.exists(video_dir):
-    video2jpg(video_path, video_dir, 1)
-
-# input('-------------------')
-# scan all the JPEG frame names in this directory
-frame_names = [
-    p for p in os.listdir(video_dir)
-    if os.path.splitext(p)[-1] in [".jpg", ".jpeg", ".JPG", ".JPEG"]
-]
-frame_names.sort(key=lambda p: int(os.path.splitext(p)[0]))
-
-inference_state = predictor.init_state(video_path=video_dir)
-predictor.reset_state(inference_state)
-
-prompts = {}  # hold all the clicks we add for visualization
-
-ann_frame_idx = 0  # the frame index we interact with
-ann_obj_id = 1  # give a unique id to each object we interact with (it can be any integers)
-
-for frame_idx in range(0, len(frame_names), sample_freq):
-    for k in video_segments[frame_idx // sample_freq].keys():
-        _, out_obj_ids, out_mask_logits = predictor.add_new_mask(
-            inference_state=inference_state,
-            frame_idx=frame_idx,
-            obj_id=k,
-            mask=video_segments[frame_idx // sample_freq][k][0]
-        )
-
-# run propagation throughout the video and collect the results in a dict
-video_segments = {}  # video_segments contains the per-frame segmentation results
-for out_frame_idx, out_obj_ids, out_mask_logits in predictor.propagate_in_video(inference_state):
-    video_segments[out_frame_idx] = {
-        out_obj_id: (out_mask_logits[i] > 0.0).cpu().numpy()
-        for i, out_obj_id in enumerate(out_obj_ids)
-    }
-
 '========================================================='
 
 color_list = {
@@ -456,22 +257,6 @@ def contour_painter(input_image, input_mask, mask_color=5, mask_alpha=0.7, conto
 
     return painted_image
 
-painted_frames = []
-for i in range(len(frame_names)):
-    img = cv2.imread(os.path.join(video_dir, frame_names[i]))
-    img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-    for k in video_segments[i].keys():
-        # img[video_segments[i][k][0]] = color_list[k]
-        # print(f"Processing segment with key: {k}")  # 打印当前键值
-        img = contour_painter(img, video_segments[i][k][0], contour_color=k)
-    painted_frames.append(img)
-
-mask_add = {}
-mask_min = {}
-for k in video_segments[i].keys():
-    mask_add[k] = []
-    mask_min[k] = []
-
 def write_video(frames, output_path, fps):
     if not frames:
         print("Error: No frames to write.")
@@ -487,23 +272,6 @@ def write_video(frames, output_path, fps):
         video_writer.write(frame_bgr)
     print('write video success')
     video_writer.release()
-
-write_video(painted_frames, output_video_path, fps=30)
-
-for i in range(len(frame_names) - 1):
-    for k in video_segments[i].keys():
-        mask_before = video_segments[i][k][0].copy()
-        mask_after = video_segments[i + 1][k][0].copy()
-        mask_after[mask_before] = False
-        add_cnt = np.sum(mask_after)
-
-        mask_before = video_segments[i][k][0].copy()
-        mask_after = video_segments[i + 1][k][0].copy()
-        mask_before[mask_after] = False
-        min_cnt = np.sum(mask_before)
-
-        mask_add[k].append(add_cnt.item())
-        mask_min[k].append(min_cnt.item())
 
 def process_mask_signal(mask_add, mask_min):
     kernel_size = 3
@@ -574,8 +342,6 @@ def process_mask_signal(mask_add, mask_min):
 
     plt.show()
 
-process_mask_signal(mask_add, mask_min)
-
 def generate_dynamic_plots(mask_add, mask_min, num_frames):
     frames = []
     fig, axs = plt.subplots(len(mask_add) * 2, 1, figsize=(6, 12))
@@ -623,3 +389,263 @@ def write_video_with_plot(video_frames, plot_frames, output_path, fps):
         video_writer.write(combined_frame)
     print('Write video success')
     video_writer.release()
+
+def main(input_video_path, output_video_path):
+    # 设置OpenAI客户端
+    client = OpenAI(api_key=mykey)
+
+    ckpt_repo_id = "ShilongLiu/GroundingDINO"
+    ckpt_filenmae = "groundingdino_swinb_cogcoor.pth"
+    ckpt_config_filename = "GroundingDINO_SwinB.cfg.py"
+
+    groundingdino_model = load_model_hf(ckpt_repo_id, ckpt_filenmae, ckpt_config_filename)
+
+    DEVICE = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
+
+    sam_checkpoint = 'sam_vit_h_4b8939.pth'
+    sam = build_sam(checkpoint=sam_checkpoint)
+    sam.to(device=DEVICE)
+    sam_predictor = SamPredictor(sam)
+
+    if DEVICE.type == 'cpu':
+        float_type = torch.float32
+    else:
+        float_type = torch.float16
+
+    pipe = StableDiffusionInpaintPipeline.from_pretrained(
+        "stabilityai/stable-diffusion-2-inpainting",
+        torch_dtype=float_type,
+    )
+
+    if DEVICE.type != 'cpu':
+        pipe = pipe.to("cuda")
+
+    # replace the path with your own video_path
+    video_path = input_video_path
+    sample_freq = 8
+    output_video_path = output_video_path
+
+    frames =read_video(video_path)
+
+    object_list_response = get_object_list(video_path, client)
+
+    num, obj_list = extract_num_object(object_list_response)
+    print(f"Generated prompt: {obj_list}")
+
+    BOX_TRESHOLD = 0.3
+    TEXT_TRESHOLD = 0.25
+    object_counts = Counter(obj_list)
+    
+    # image_source, image = load_image(local_image_path)
+    image_source, image = load_image_from_array(frames[0])
+
+    best_boxes = []
+    best_phrases = []
+    best_logits = []
+
+    # 遍历每个物体，选择置信度最高的box
+    for obj, count in object_counts.items():
+        boxes, logits, phrases = predict(
+            model=groundingdino_model,
+            image=image,
+            caption=obj,
+            box_threshold=BOX_TRESHOLD,
+            text_threshold=TEXT_TRESHOLD,
+            device=DEVICE
+        )
+
+        
+        if boxes.shape[0] > 0:
+            # 取出与该物体在 obj_list 中出现次数一致的 bounding boxes
+            selected_count = min(count, boxes.shape[0])  # 如果返回的 boxes 少于物体出现的次数，取较小值
+            for i in range(selected_count):
+                best_boxes.append(boxes[i].unsqueeze(0))  # 保存每个 box
+                best_phrases.append(phrases[i])  # 对应的物体短语
+                best_logits.append(logits[i])  # 对应的logit
+
+
+    # 将 best_boxes 列表转换为单个 tensor
+    if best_boxes:
+        best_boxes = torch.cat(best_boxes)  # 合并成一个张量
+        best_logits = torch.stack(best_logits)  # 将 logits 也合并为张量
+
+    annotated_frame = my_annotate(image_source=image_source, boxes=best_boxes, logits=best_logits, phrases=best_phrases)
+    annotated_frame = annotated_frame[..., ::-1]  # BGR to RGB
+
+    sam_predictor.set_image(image_source)
+
+    H, W, _ = image_source.shape
+    boxes_xyxy = box_ops.box_cxcywh_to_xyxy(best_boxes) * torch.Tensor([W, H, W, H])
+
+    transformed_boxes = sam_predictor.transform.apply_boxes_torch(boxes_xyxy, image_source.shape[:2]).to(DEVICE)
+    masks, _, _ = sam_predictor.predict_torch(
+        point_coords=None,
+        point_labels=None,
+        boxes=transformed_boxes,
+        multimask_output=False,
+    )
+
+    masks = masks.cpu()
+    masks_np = masks.numpy()
+
+    h, w = masks_np[0][0].shape
+    pixel_cnt = h * w
+    indices_to_keep = np.ones(len(masks_np), dtype=bool)
+    for i in range(len(masks_np)):
+        # print(np.sum(masks_np[i][0]), pixel_cnt)
+        if (np.sum(masks_np[i][0]) > pixel_cnt * 0.3):
+            indices_to_keep[i] = False
+    masks_np = masks_np[indices_to_keep]
+
+    # input('----------------------')
+    del groundingdino_model
+    del sam
+    del sam_predictor
+    del pipe
+
+    torch.cuda.empty_cache()
+    gc.collect()
+
+    # use bfloat16 for the entire notebook
+    torch.autocast(device_type="cuda", dtype=torch.bfloat16).__enter__()
+
+    if torch.cuda.get_device_properties(0).major >= 8:
+        # turn on tfloat32 for Ampere GPUs (https://pytorch.org/docs/stable/notes/cuda.html#tensorfloat-32-tf32-on-ampere-devices)
+        torch.backends.cuda.matmul.allow_tf32 = True
+        torch.backends.cudnn.allow_tf32 = True
+
+    sam2_checkpoint = "segment-anything-2/checkpoints/sam2_hiera_large.pt"
+    model_cfg = "sam2_hiera_l.yaml"
+
+    predictor = build_sam2_video_predictor(model_cfg, sam2_checkpoint, device='cuda:0')
+
+    '=================== First Round for sampling ==================='
+
+    video_dir = os.path.dirname(video_path) + f'/sample_freq_{sample_freq}_' + video_path.split('/')[-1].split('.')[0]
+    if not os.path.exists(video_dir):
+        video2jpg(video_path, video_dir, sample_freq)
+
+    # input('-------------------')
+    # scan all the JPEG frame names in this directory
+    frame_names = [
+        p for p in os.listdir(video_dir)
+        if os.path.splitext(p)[-1] in [".jpg", ".jpeg", ".JPG", ".JPEG"]
+    ]
+    frame_names.sort(key=lambda p: int(os.path.splitext(p)[0]))
+
+    inference_state = predictor.init_state(video_path=video_dir)
+    predictor.reset_state(inference_state)
+
+    prompts = {}  # hold all the clicks we add for visualization
+
+    ann_frame_idx = 0  # the frame index we interact with
+    ann_obj_id = 1  # give a unique id to each object we interact with (it can be any integers)
+
+    for i in range(len(masks_np)):
+        _, out_obj_ids, out_mask_logits = predictor.add_new_mask(
+            inference_state=inference_state,
+            frame_idx=ann_frame_idx,
+            obj_id=i,
+            mask=masks_np[i][0]
+        )
+
+    # run propagation throughout the video and collect the results in a dict
+    video_segments = {}  # video_segments contains the per-frame segmentation results
+    for out_frame_idx, out_obj_ids, out_mask_logits in predictor.propagate_in_video(inference_state):
+        video_segments[out_frame_idx] = {
+            out_obj_id: (out_mask_logits[i] > 0.0).cpu().numpy()
+            for i, out_obj_id in enumerate(out_obj_ids)
+        }
+
+    '========================================================='
+
+    '=================== Second Round for process whole video ==================='
+    del inference_state
+    del predictor
+    torch.cuda.empty_cache()
+    torch.cuda.set_device(1)
+
+    # predictor._reset_tracking_results(inference_state)
+    predictor = build_sam2_video_predictor(model_cfg, sam2_checkpoint)
+
+    video_dir = os.path.dirname(video_path) + '/' + video_path.split('/')[-1].split('.')[0]
+    if not os.path.exists(video_dir):
+        video2jpg(video_path, video_dir, 1)
+
+    # input('-------------------')
+    # scan all the JPEG frame names in this directory
+    frame_names = [
+        p for p in os.listdir(video_dir)
+        if os.path.splitext(p)[-1] in [".jpg", ".jpeg", ".JPG", ".JPEG"]
+    ]
+    frame_names.sort(key=lambda p: int(os.path.splitext(p)[0]))
+
+    inference_state = predictor.init_state(video_path=video_dir)
+    predictor.reset_state(inference_state)
+
+    prompts = {}  # hold all the clicks we add for visualization
+
+    ann_frame_idx = 0  # the frame index we interact with
+    ann_obj_id = 1  # give a unique id to each object we interact with (it can be any integers)
+
+    for frame_idx in range(0, len(frame_names), sample_freq):
+        for k in video_segments[frame_idx // sample_freq].keys():
+            _, out_obj_ids, out_mask_logits = predictor.add_new_mask(
+                inference_state=inference_state,
+                frame_idx=frame_idx,
+                obj_id=k,
+                mask=video_segments[frame_idx // sample_freq][k][0]
+            )
+
+    # run propagation throughout the video and collect the results in a dict
+    video_segments = {}  # video_segments contains the per-frame segmentation results
+    for out_frame_idx, out_obj_ids, out_mask_logits in predictor.propagate_in_video(inference_state):
+        video_segments[out_frame_idx] = {
+            out_obj_id: (out_mask_logits[i] > 0.0).cpu().numpy()
+            for i, out_obj_id in enumerate(out_obj_ids)
+        }
+
+    painted_frames = []
+    for i in range(len(frame_names)):
+        img = cv2.imread(os.path.join(video_dir, frame_names[i]))
+        img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+        for k in video_segments[i].keys():
+            # img[video_segments[i][k][0]] = color_list[k]
+            # print(f"Processing segment with key: {k}")  # 打印当前键值
+            img = contour_painter(img, video_segments[i][k][0], contour_color=k)
+        painted_frames.append(img)
+
+    mask_add = {}
+    mask_min = {}
+    for k in video_segments[i].keys():
+        mask_add[k] = []
+        mask_min[k] = []
+
+    write_video(painted_frames, output_video_path, fps=30)
+
+    for i in range(len(frame_names) - 1):
+        for k in video_segments[i].keys():
+            mask_before = video_segments[i][k][0].copy()
+            mask_after = video_segments[i + 1][k][0].copy()
+            mask_after[mask_before] = False
+            add_cnt = np.sum(mask_after)
+
+            mask_before = video_segments[i][k][0].copy()
+            mask_after = video_segments[i + 1][k][0].copy()
+            mask_before[mask_after] = False
+            min_cnt = np.sum(mask_before)
+
+            mask_add[k].append(add_cnt.item())
+            mask_min[k].append(min_cnt.item())
+            
+    process_mask_signal(mask_add, mask_min)
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Process video with SAM and GroundingDINO.")
+    parser.add_argument('--input', type=str, help='Path to the input video')
+    parser.add_argument('--output', type=str, help='Path to the output video')
+    
+    args = parser.parse_args()
+    
+    # 调用 main 函数
+    main(args.input, args.output)

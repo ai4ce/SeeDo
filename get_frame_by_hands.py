@@ -391,10 +391,10 @@ class FrameExtractor:
         self.mp_hand_options = HandLandmarkerOptions(
             base_options=BaseOptions(model_asset_path='./hand_landmarker.task'),
             running_mode=VisionRunningMode.VIDEO,
-            num_hands=2,
-            min_hand_detection_confidence=0.8,
-            min_hand_presence_confidence=0.8,
-            min_tracking_confidence=0.8,
+            num_hands=1,
+            min_hand_detection_confidence=0.3,
+            min_hand_presence_confidence=0.3,
+            min_tracking_confidence=0.3,
             )
     
     def _visualization_init(self):

@@ -12,11 +12,12 @@ import os
 import time
 from pathlib import Path
 from argparse import ArgumentParser
+import csv
 
 os.environ["CUDA_VISIBLE_DEVICES"] = "1"
 
 class FrameExtractor:
-    def __init__(self, video_path, output_dir, gaussian_sigma=5, prominence=0.8):
+    def __init__(self, video_path, output_dir, gaussian_sigma=5, prominence=0.8, csv_file='selected_valleys.csv'):
         self._folder_init(video_path, output_dir)
         self._mediapipe_init()
         self._visualization_init()
@@ -33,7 +34,9 @@ class FrameExtractor:
         # signal processing parameters
         self.gaussian_sigma = gaussian_sigma
         self.prominence = prominence
-       
+
+        self.csv_file = csv_file
+ 
     def extract_frames(self):
         '''
         Extract the frames from the video.
@@ -65,7 +68,7 @@ class FrameExtractor:
         # Filter valleys based on the index difference
         selected_valleys = []
         for i in range(len(valleys)):
-            if i == 0 or (valleys[i] - selected_valleys[-1]) >= 26:
+            if i == 0 or (valleys[i] - selected_valleys[-1]) >= 15:
                 selected_valleys.append(valleys[i])
 
         print(f"Plotting and making videos with smoothed {self.handedness} hand speed curve.")
@@ -87,9 +90,21 @@ class FrameExtractor:
             cv2.imwrite(f'{str(self.all_valleys_folder)}/{valley}.jpg', frame)
         print(f"All valley frames are: {valleys}")
 
+        # Save selected valleys to a unified CSV
+        self.save_selected_valleys_to_csv(selected_valleys)
+
         self.cap.release()
         print("All done!")
-        return selected_valleys
+
+    def save_selected_valleys_to_csv(self, selected_valleys):
+        '''
+        Save the selected valleys to a unified CSV file with the video name as the identifier.
+        This ensures all videos append to the same CSV file.
+        '''
+        with open(self.csv_file, mode='a', newline='') as file:
+            writer = csv.writer(file)
+            writer.writerow([self.video_name, selected_valleys])
+        print(f"Selected valleys for {self.video_name} saved to {self.csv_file}")
 
     def analyze_video(self):
         '''
@@ -391,10 +406,10 @@ class FrameExtractor:
         self.mp_hand_options = HandLandmarkerOptions(
             base_options=BaseOptions(model_asset_path='./hand_landmarker.task'),
             running_mode=VisionRunningMode.VIDEO,
-            num_hands=1,
-            min_hand_detection_confidence=0.3,
-            min_hand_presence_confidence=0.3,
-            min_tracking_confidence=0.3,
+            num_hands=2,
+            min_hand_detection_confidence=0.2,
+            min_hand_presence_confidence=0.2,
+            min_tracking_confidence=0.2,
             )
     
     def _visualization_init(self):
@@ -444,8 +459,7 @@ def main(args):
     prominence = args_parsed.prominence
 
     frame_extractor = FrameExtractor(video_path, output_dir, gaussian_sigma, prominence)
-    selected_frames_index = frame_extractor.extract_frames()
-    return selected_frames_index
+    frame_extractor.extract_frames()
 
 if __name__ == '__main__':
     args = ArgumentParser()

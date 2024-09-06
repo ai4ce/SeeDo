@@ -1,16 +1,16 @@
 import copy
 import numpy as np
-from src.env import PickPlaceEnv
-from src.env import ALL_BLOCKS, ALL_BOWLS
-from src.LMP import LMP, LMP_wrapper, LMPFGen
-from src.configs import cfg_tabletop, lmp_tabletop_coords
+# from src.env import PickPlaceEnv
+# from src.env import ALL_BLOCKS, ALL_BOWLS
+# from src.LMP import LMP, LMP_wrapper, LMPFGen
+# from src.configs import cfg_tabletop, lmp_tabletop_coords
 import cv2
 import shapely
 from shapely.geometry import *
 from shapely.affinity import *
 import matplotlib.pyplot as plt
-from moviepy.editor import ImageSequenceClip
-import moviepy
+# from moviepy.editor import ImageSequenceClip
+# import moviepy
 from openai import OpenAI
 from src.key import mykey
 import sys
@@ -20,67 +20,75 @@ from io import BytesIO
 import os
 import re
 from PIL import Image
+from collections import Counter
+import argparse
+import csv
+import ffmpy
+import ast
 
 from src.vlm_video import extract_frame_list  # import extract_frames
 
-def setup_LMP(env, cfg_tabletop, openai_client):
-    # LMP env wrapper
-    cfg_tabletop = copy.deepcopy(cfg_tabletop)
-    cfg_tabletop["env"] = dict()
-    cfg_tabletop["env"]["init_objs"] = list(env.obj_name_to_id.keys())
-    cfg_tabletop["env"]["coords"] = lmp_tabletop_coords
-    LMP_env = LMP_wrapper(env, cfg_tabletop)
-    # creating APIs that the LMPs can interact with
-    fixed_vars = {"np": np}
-    fixed_vars.update(
-        {
-            name: eval(name)
-            for name in shapely.geometry.__all__ + shapely.affinity.__all__
-        }
-    )
-    variable_vars = {
-        k: getattr(LMP_env, k)
-        for k in [
-            "get_bbox",
-            "get_obj_pos",
-            "get_color",
-            "is_obj_visible",
-            "denormalize_xy",
-            "put_first_on_second",
-            "get_obj_names",
-            "get_corner_name",
-            "get_side_name",
-        ]
-    }
-    variable_vars["say"] = lambda msg: print(f"robot says: {msg}")
+# set up your openai api key
+client = OpenAI(api_key=mykey)
 
-    # creating the function-generating LMP
-    lmp_fgen = LMPFGen(openai_client, cfg_tabletop["lmps"]["fgen"], fixed_vars, variable_vars)
+# def setup_LMP(env, cfg_tabletop, openai_client):
+#     # LMP env wrapper
+#     cfg_tabletop = copy.deepcopy(cfg_tabletop)
+#     cfg_tabletop["env"] = dict()
+#     cfg_tabletop["env"]["init_objs"] = list(env.obj_name_to_id.keys())
+#     cfg_tabletop["env"]["coords"] = lmp_tabletop_coords
+#     LMP_env = LMP_wrapper(env, cfg_tabletop)
+#     # creating APIs that the LMPs can interact with
+#     fixed_vars = {"np": np}
+#     fixed_vars.update(
+#         {
+#             name: eval(name)
+#             for name in shapely.geometry.__all__ + shapely.affinity.__all__
+#         }
+#     )
+#     variable_vars = {
+#         k: getattr(LMP_env, k)
+#         for k in [
+#             "get_bbox",
+#             "get_obj_pos",
+#             "get_color",
+#             "is_obj_visible",
+#             "denormalize_xy",
+#             "put_first_on_second",
+#             "get_obj_names",
+#             "get_corner_name",
+#             "get_side_name",
+#         ]
+#     }
+#     variable_vars["say"] = lambda msg: print(f"robot says: {msg}")
 
-    # creating other low-level LMPs
-    variable_vars.update(
-        {
-            k: LMP(openai_client, k, cfg_tabletop["lmps"][k], lmp_fgen, fixed_vars, variable_vars)
-            for k in [
-                "parse_obj_name",
-                "parse_position",
-                "parse_question",
-                "transform_shape_pts",
-            ]
-        }
-    )
+#     # creating the function-generating LMP
+#     lmp_fgen = LMPFGen(openai_client, cfg_tabletop["lmps"]["fgen"], fixed_vars, variable_vars)
 
-    # creating the LMP that deals w/ high-level language commands
-    lmp_tabletop_ui = LMP(
-        openai_client,
-        "tabletop_ui",
-        cfg_tabletop["lmps"]["tabletop_ui"],
-        lmp_fgen,
-        fixed_vars,
-        variable_vars,
-    )
+#     # creating other low-level LMPs
+#     variable_vars.update(
+#         {
+#             k: LMP(openai_client, k, cfg_tabletop["lmps"][k], lmp_fgen, fixed_vars, variable_vars)
+#             for k in [
+#                 "parse_obj_name",
+#                 "parse_position",
+#                 "parse_question",
+#                 "transform_shape_pts",
+#             ]
+#         }
+#     )
 
-    return lmp_tabletop_ui
+#     # creating the LMP that deals w/ high-level language commands
+#     lmp_tabletop_ui = LMP(
+#         openai_client,
+#         "tabletop_ui",
+#         cfg_tabletop["lmps"]["tabletop_ui"],
+#         lmp_fgen,
+#         fixed_vars,
+#         variable_vars,
+#     )
+
+#     return lmp_tabletop_ui
 
 # def for calling openai api with different prompts
 def call_openai_api(prompt_messages):
@@ -166,7 +174,7 @@ def parse_closest_object_and_relationship(response):
     print("Error parsing closest object and relationship from response:", response)
     return None, None
 
-def process_images(selected_frames):
+def process_images(selected_frames, obj_list):
     string_cache = ""  # cache for CaP operations
     i = 1
 
@@ -310,127 +318,113 @@ def process_images(selected_frames):
         
     return string_cache
 
-# set up your openai api key
-client = OpenAI(api_key=mykey)
+def save_results_to_csv(demo_name, num, obj_list, string_cache, output_file):
+    """
+    将结果保存到指定的 CSV 文件中，追加模式不会覆盖之前的内容。
+    如果文件不存在，则创建并写入标题行。
+    """
+    file_exists = os.path.exists(output_file)
 
-###################################################################################
-# 选择帧路径
-folder_path = '/home/bw2716/VLMTutor/media/output_demo/fruit_container_task/long_demo1/selected_frames'
-# # 存储图像帧的列表
-# selected_raw_frames1 = []
-# # 获取并排序文件夹中的所有图像
-# filenames = sorted(
-#     os.listdir(folder_path),
-#     key=lambda x: int(''.join(filter(str.isdigit, os.path.splitext(x)[0])))
-# )
-# # 遍历排序后的文件名列表
-# for filename in filenames:
-#     if filename.endswith('.jpg') or filename.endswith('.png'):
-#         file_path = os.path.join(folder_path, filename)
-#         # 使用 OpenCV 读取图像
-#         cv2_image = cv2.imread(file_path)
-#         selected_raw_frames1.append(cv2_image)
+    with open(output_file, mode='a', newline='') as file:
+        writer = csv.writer(file)
 
-# selected_frames1 = extract_frame_list(selected_raw_frames1)
+        # 如果文件不存在，则写入标题行
+        if not file_exists:
+            writer.writerow(["object", "action list"])
+        
+        # 写入数据
+        writer.writerow([f"{num} objects: {', '.join(obj_list)}", string_cache])
 
-# 显示前5帧
-# for i in range(min(5, len(selected_frames1))):
-#     plt.figure()
-#     plt.imshow(cv2.cvtColor(selected_frames1[i], cv2.COLOR_BGR2RGB))
-#     plt.title(f"Frame {i}")
-#     plt.axis('off')  # 隐藏坐标轴
-#     plt.show()
+    print(f"Results appended to {output_file}")
 
-#########################################################################
-# first get the object list
-def convert_video_to_mp4(input_path, output_path):
+
+def convert_video_to_mp4(input_path):
     """
     Converts the input video file to H.264 encoded .mp4 format using ffmpy.
+    The output path will be the same as the input path with '_converted' appended before the extension.
     """
+    # Get the file name without extension and append '_converted'
+    base_name, ext = os.path.splitext(input_path)
+    output_path = f"{base_name}_converted.mp4"
+
+    # Run FFmpeg command to convert the video
     ff = ffmpy.FFmpeg(
         inputs={input_path: None},
         outputs={output_path: '-c:v libx264 -crf 23 -preset fast'}
     )
     ff.run()
     print(f"Video converted successfully: {output_path}")
+    return output_path
 
-# video path
-video_path = '/home/bw2716/VLMTutor/media/intermediate_demo/long_demo1_sam2_contour.mp4'
-converted_video_path = '/home/bw2716/VLMTutor/media/intermediate_demo/long_demo1_converted_sam2_contour.mp4'
-# list to store key frames
-selected_raw_frames1 = []
-# list to store key frame indexes
-selected_frame_index = [0, 34, 72, 109, 147, 188, 239, 283, 326]
 
-# Convert the video to H.264 encoded .mp4 format
-convert_video_to_mp4(video_path, converted_video_path)
+def main(input_video_path, frame_index_list, demo_name):
+    # 如果 frame_index_list 是字符串，使用 ast.literal_eval 将其转换为列表
+    # 现在转换为整数列表
+    frame_index_list = ast.literal_eval(frame_index_list)
 
-# Open the converted video
-cap = cv2.VideoCapture(converted_video_path)
+    # video path
+    video_path = input_video_path
+    # list to store key frames
+    selected_raw_frames1 = []
+    # list to store key frame indexes
+    selected_frame_index = frame_index_list
 
-# Manually calculate total number of frames
-actual_frame_count = 0
-while cap.isOpened():
-    ret, frame = cap.read()
-    if not ret:
-        break
-    actual_frame_count += 1
+    # Convert the video to H.264 encoded .mp4 format
+    converted_video_path = convert_video_to_mp4(video_path)
 
-# Reset the capture to the beginning of the video
-cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+    # Open the converted video
+    cap = cv2.VideoCapture(converted_video_path)
 
-print(f"Actual frame count: {actual_frame_count}")
+    # Manually calculate total number of frames
+    actual_frame_count = 0
+    while cap.isOpened():
+        ret, frame = cap.read()
+        if not ret:
+            break
+        actual_frame_count += 1
 
-# Iterate through index list and get the frame list
-for index in selected_frame_index:
-    if index < actual_frame_count:
-        cap.set(cv2.CAP_PROP_POS_FRAMES, index)
-        ret, cv2_image = cap.read()
-        if ret:
-            selected_raw_frames1.append(cv2_image)
+    # Reset the capture to the beginning of the video
+    cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+
+    print(f"Actual frame count: {actual_frame_count}")
+
+    # Iterate through index list and get the frame list
+    for index in selected_frame_index:
+        if index < actual_frame_count:
+            cap.set(cv2.CAP_PROP_POS_FRAMES, index)
+            ret, cv2_image = cap.read()
+            if ret:
+                selected_raw_frames1.append(cv2_image)
+            else:
+                print(f"Failed to retrieve frame at index {index}")
         else:
-            print(f"Failed to retrieve frame at index {index}")
-    else:
-        print(f"Frame index {index} is out of range for this video.")
+            print(f"Frame index {index} is out of range for this video.")
 
-# Release video capture object
-cap.release()
+    # Release video capture object
+    cap.release()
 
-# 调用处理函数
-selected_frames1 = extract_frame_list(selected_raw_frames1)
+    # 调用处理函数
+    selected_frames1 = extract_frame_list(selected_raw_frames1)
 
-response_state = get_object_list(selected_frames1)
-num, obj_list = extract_num_object(response_state)
-print("Number of objects:", num)
-print("available objects:", obj_list)
-# obj_list = "green corn, orange carrot, red pepper, white bowl, glass container"
-# process the key frames
-string_cache = process_images(selected_frames1)
-if string_cache.endswith(" and then "):
-    my_string = string_cache.removesuffix(" and then ")
+    response_state = get_object_list(selected_frames1)
+    num, obj_list = extract_num_object(response_state)
+    print("Number of objects:", num)
+    print("available objects:", obj_list)
+    # obj_list = "green corn, orange carrot, red pepper, white bowl, glass container"
+    # process the key frames
+    string_cache = process_images(selected_frames1, obj_list)
+    if string_cache.endswith(" and then "):
+        my_string = string_cache.removesuffix(" and then ")
 
-# check the action list
-print("action list: " + string_cache)
-print("Current working directory:", os.getcwd())
-# replace urdf_path with your local path
-urdf_path = "VLM_CaP/ur5e/ur5e.urdf"
-# initialize environment
-env = PickPlaceEnv(render=True, high_res=True, high_frame_rate=False)
-_ = env.reset(obj_list)
-lmp_tabletop_ui = setup_LMP(env, cfg_tabletop, client)
+    results_file = "./sam2_contour_vegetable_results.csv"
+    save_results_to_csv(demo_name, num, obj_list, string_cache, results_file)
 
-# check again for the objects
-print('available objects:')
-print(obj_list)
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Process video and key frame extraction.")
+    parser.add_argument('--input', type=str, required=True, help='Input video path')
+    parser.add_argument('--list', type=str, required=True, help='List of key frame indexes')
+    parser.add_argument('--demo', type=str, required=True, help='demo name')
 
-user_input = string_cache
-env.cache_video = []
-
-print('Running policy and recording video...')
-lmp_tabletop_ui(user_input, f'objects = {env.object_list}')
-
-# render video
-if env.cache_video:
-    rendered_clip = ImageSequenceClip(env.cache_video, fps=25)
-    video_path = './rendered_video.mp4'
-    rendered_clip.write_videofile(video_path, codec='libx264')
+    args = parser.parse_args()
+    # Call the main function with arguments
+    main(args.input, args.list, args.demo)

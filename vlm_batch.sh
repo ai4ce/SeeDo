@@ -1,8 +1,10 @@
 #!/bin/bash
 
 # 定义路径
-CSV_FILE="/home/bw2716/VLMTutor/selected_valleys.csv"
-VIDEO_DIR="/home/bw2716/VLMTutor/media/intermediate_demo"
+CSV_FILE="/home/bw2716/VLMTutor/colored_block_selected_valleys copy.csv"
+VIDEO_DIR="/home/bw2716/VLMTutor/media/intermediate_demo/colored block"
+# CSV_FILE="/home/bw2716/VLMTutor/wooden_block_selected_valleys.csv"
+# VIDEO_DIR="/home/bw2716/VLMTutor/media/intermediate_demo/wooden_block"
 
 # 循环读取 CSV 文件中的每一行
 while IFS=, read -r demo indexlist

@@ -416,7 +416,7 @@ def main(input_video_path, frame_index_list, demo_name):
     if string_cache.endswith(" and then "):
         my_string = string_cache.removesuffix(" and then ")
 
-    results_file = "./sam2_contour_vegetable_results.csv"
+    results_file = "./sam2_contour_wooden_block_results.csv"
     save_results_to_csv(demo_name, num, obj_list, string_cache, results_file)
 
 if __name__ == "__main__":

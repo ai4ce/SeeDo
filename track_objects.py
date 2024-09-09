@@ -14,9 +14,10 @@ import json
 import matplotlib.pyplot as plt
 import re
 from openai import OpenAI
+import csv
 import base64
 from io import BytesIO
-from VLM_CaP.src.key import mykey
+from VLM_CaP.src.key import mykey, projectkey
 from collections import Counter
 from diffusers import StableDiffusionInpaintPipeline
 from sam2.build_sam import build_sam2_video_predictor
@@ -96,7 +97,7 @@ def get_object_list(video_path, client):
             ],
         },
     ]
-    
+
     response_state = call_openai_api(prompt_messages_state, client)
     return response_state
 
@@ -180,7 +181,6 @@ def show_mask(mask, ax, obj_id=None, random_color=False):
     h, w = mask.shape[-2:]
     mask_image = mask.reshape(h, w, 1) * color.reshape(1, 1, -1)
     ax.imshow(mask_image)
-
 
 def show_points(coords, labels, ax, marker_size=200):
     pos_points = coords[labels == 1]
@@ -390,9 +390,18 @@ def write_video_with_plot(video_frames, plot_frames, output_path, fps):
     print('Write video success')
     video_writer.release()
 
-def main(input_video_path, output_video_path):
+def save_coordinates_to_csv(key_frame_coordinates, demo_name, output_csv):
+    with open(output_csv, mode='a', newline='') as file:
+        writer  = csv.writer(file)
+        writer.writerow(['demo', 'bounding box'])
+
+        for key_frame, coordinates in key_frame_coordinates.items():
+            coordinates_str = '\n'.join(coordinates)
+            writer.writerow([demo_name, coordinates_str])
+
+def main(input_video_path, output_video_path, key_frames):
     # 设置OpenAI客户端
-    client = OpenAI(api_key=mykey)
+    client = OpenAI(api_key=projectkey)
 
     ckpt_repo_id = "ShilongLiu/GroundingDINO"
     ckpt_filenmae = "groundingdino_swinb_cogcoor.pth"
@@ -454,7 +463,6 @@ def main(input_video_path, output_video_path):
             device=DEVICE
         )
 
-        
         if boxes.shape[0] > 0:
             # 取出与该物体在 obj_list 中出现次数一致的 bounding boxes
             selected_count = min(count, boxes.shape[0])  # 如果返回的 boxes 少于物体出现的次数，取较小值
@@ -462,7 +470,6 @@ def main(input_video_path, output_video_path):
                 best_boxes.append(boxes[i].unsqueeze(0))  # 保存每个 box
                 best_phrases.append(phrases[i])  # 对应的物体短语
                 best_logits.append(logits[i])  # 对应的logit
-
 
     # 将 best_boxes 列表转换为单个 tensor
     if best_boxes:
@@ -473,7 +480,6 @@ def main(input_video_path, output_video_path):
     annotated_frame = annotated_frame[..., ::-1]  # BGR to RGB
 
     sam_predictor.set_image(image_source)
-
     H, W, _ = image_source.shape
     boxes_xyxy = box_ops.box_cxcywh_to_xyxy(best_boxes) * torch.Tensor([W, H, W, H])
 
@@ -487,6 +493,35 @@ def main(input_video_path, output_video_path):
 
     masks = masks.cpu()
     masks_np = masks.numpy()
+
+    # 存储每个关键帧的物体平均坐标，使用字典存储每个关键帧对应的坐标
+    key_frame_coordinates = {}
+
+    for frame_idx, frame in enumerate(frames):
+        if frame_idx in key_frames:
+            current_frame_coords = []  # 存储当前关键帧的物体坐标
+            for i, box in enumerate(best_boxes):
+                mask = masks_np[i][0]
+                mask_indices = np.argwhere(mask > 0)
+
+                if len(mask_indices) > 0:
+                    # 计算mask的平均坐标
+                    avg_y, avg_x = np.mean(mask_indices, axis=0)
+                    object_name = best_phrases[i]
+                    current_frame_coords.append(f"{object_name}: ({int(avg_x)}, {int(avg_y)})")
+
+            # 将当前关键帧的结果存储到字典中
+            key_frame_coordinates[f"key_frame{frame_idx}"] = current_frame_coords
+
+    # 假设 --input 对应的是 'demo_name'
+    demo_name = input_video_path  # 这里你可以用 argparse 或其他方式获取输入
+    output_csv = "key_frame_bbx.csv"  # 输出的csv文件名称
+
+    # 保存结果到csv
+    save_coordinates_to_csv(key_frame_coordinates, demo_name, output_csv)
+
+    # 打印提示信息
+    print(f"Coordinates saved to {output_csv}")
 
     h, w = masks_np[0][0].shape
     pixel_cnt = h * w
@@ -610,8 +645,6 @@ def main(input_video_path, output_video_path):
         img = cv2.imread(os.path.join(video_dir, frame_names[i]))
         img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
         for k in video_segments[i].keys():
-            # img[video_segments[i][k][0]] = color_list[k]
-            # print(f"Processing segment with key: {k}")  # 打印当前键值
             img = contour_painter(img, video_segments[i][k][0], contour_color=k)
         painted_frames.append(img)
 
@@ -621,7 +654,7 @@ def main(input_video_path, output_video_path):
         mask_add[k] = []
         mask_min[k] = []
 
-    write_video(painted_frames, output_video_path, fps=30)
+    # write_video(painted_frames, output_video_path, fps=30)
 
     for i in range(len(frame_names) - 1):
         for k in video_segments[i].keys():
@@ -644,8 +677,9 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Process video with SAM and GroundingDINO.")
     parser.add_argument('--input', type=str, help='Path to the input video')
     parser.add_argument('--output', type=str, help='Path to the output video')
+    parser.add_argument('--key_frames', nargs='+', type=int, help='List of key frame indices')
     
     args = parser.parse_args()
     
     # 调用 main 函数
-    main(args.input, args.output)
+    main(args.input, args.output, args.key_frames)

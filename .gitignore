@@ -21,6 +21,9 @@ tracker/
 # pth model
 *.pth
 
+# csv files
+*.csv
+
 ############################media###############################
 # media/
 media/

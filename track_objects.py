@@ -14,13 +14,13 @@ import json
 import matplotlib.pyplot as plt
 import re
 from openai import OpenAI
-import csv
 import base64
 from io import BytesIO
 from VLM_CaP.src.key import mykey, projectkey
 from collections import Counter
 from diffusers import StableDiffusionInpaintPipeline
 from sam2.build_sam import build_sam2_video_predictor
+import csv
 
 # Grounding DINO
 from GroundingDINO.groundingdino.models import build_model
@@ -237,7 +237,7 @@ def vis_add_mask(image, mask, color, alpha):
     image[mask] = image[mask] * (1 - alpha) + color * alpha
     return image.astype('uint8')
 
-def contour_painter(input_image, input_mask, mask_color=5, mask_alpha=0.7, contour_color=1, contour_width=3):
+def contour_painter(input_image, input_mask, mask_color=5, mask_alpha=0.7, contour_color=1, contour_width=3, ann_obj_id=None):
     assert input_image.shape[:2] == input_mask.shape, 'different shape between image and mask'
     # 0: background, 1: foreground
     mask = np.clip(input_mask, 0, 1).astype(np.uint8)
@@ -254,6 +254,19 @@ def contour_painter(input_image, input_mask, mask_color=5, mask_alpha=0.7, conto
 
     # paint contour
     painted_image = vis_add_mask(input_image.copy(), 1 - contour_mask, contour_color, 1)
+
+    # 找到 mask 的中心位置
+    moments = cv2.moments(mask)
+    # breakpoint()
+    if moments['m00'] != 0 and ann_obj_id is not None:
+        cX = int(moments['m10'] / moments['m00'])
+        cY = int(moments['m01'] / moments['m00'])
+
+        font = cv2.FONT_HERSHEY_SIMPLEX
+        font_scale = 1.2
+        font_color = (0, 0, 0)  # 白色文字
+        font_thickness = 3
+        cv2.putText(painted_image, str(ann_obj_id), (cX, cY), font, font_scale, font_color, font_thickness)
 
     return painted_image
 
@@ -390,15 +403,6 @@ def write_video_with_plot(video_frames, plot_frames, output_path, fps):
     print('Write video success')
     video_writer.release()
 
-def save_coordinates_to_csv(key_frame_coordinates, demo_name, output_csv):
-    with open(output_csv, mode='a', newline='') as file:
-        writer  = csv.writer(file)
-        writer.writerow(['demo', 'bounding box'])
-
-        for key_frame, coordinates in key_frame_coordinates.items():
-            coordinates_str = '\n'.join(coordinates)
-            writer.writerow([demo_name, coordinates_str])
-
 def main(input_video_path, output_video_path, key_frames):
     # 设置OpenAI客户端
     client = OpenAI(api_key=projectkey)
@@ -431,7 +435,7 @@ def main(input_video_path, output_video_path, key_frames):
 
     # replace the path with your own video_path
     video_path = input_video_path
-    sample_freq = 8
+    sample_freq = 16
     output_video_path = output_video_path
 
     frames =read_video(video_path)
@@ -494,34 +498,7 @@ def main(input_video_path, output_video_path, key_frames):
     masks = masks.cpu()
     masks_np = masks.numpy()
 
-    # 存储每个关键帧的物体平均坐标，使用字典存储每个关键帧对应的坐标
-    key_frame_coordinates = {}
 
-    for frame_idx, frame in enumerate(frames):
-        if frame_idx in key_frames:
-            current_frame_coords = []  # 存储当前关键帧的物体坐标
-            for i, box in enumerate(best_boxes):
-                mask = masks_np[i][0]
-                mask_indices = np.argwhere(mask > 0)
-
-                if len(mask_indices) > 0:
-                    # 计算mask的平均坐标
-                    avg_y, avg_x = np.mean(mask_indices, axis=0)
-                    object_name = best_phrases[i]
-                    current_frame_coords.append(f"{object_name}: ({int(avg_x)}, {int(avg_y)})")
-
-            # 将当前关键帧的结果存储到字典中
-            key_frame_coordinates[f"key_frame{frame_idx}"] = current_frame_coords
-
-    # 假设 --input 对应的是 'demo_name'
-    demo_name = input_video_path  # 这里你可以用 argparse 或其他方式获取输入
-    output_csv = "key_frame_bbx.csv"  # 输出的csv文件名称
-
-    # 保存结果到csv
-    save_coordinates_to_csv(key_frame_coordinates, demo_name, output_csv)
-
-    # 打印提示信息
-    print(f"Coordinates saved to {output_csv}")
 
     h, w = masks_np[0][0].shape
     pixel_cnt = h * w
@@ -632,20 +609,65 @@ def main(input_video_path, output_video_path, key_frames):
                 mask=video_segments[frame_idx // sample_freq][k][0]
             )
 
-    # run propagation throughout the video and collect the results in a dict
     video_segments = {}  # video_segments contains the per-frame segmentation results
     for out_frame_idx, out_obj_ids, out_mask_logits in predictor.propagate_in_video(inference_state):
         video_segments[out_frame_idx] = {
             out_obj_id: (out_mask_logits[i] > 0.0).cpu().numpy()
             for i, out_obj_id in enumerate(out_obj_ids)
         }
+    
+    key_frame_coordinates = {}
+    # 遍历关键帧
+    for frame_idx in key_frames:
+        current_frame_coords = []
+        
+        # 如果该帧存在于video_segments中
+        if frame_idx in video_segments:
+            for obj_id, mask in video_segments[frame_idx].items():
+                mask_data = mask[0]  # 提取掩码数据，形状为(height, width)
+                mask_indices = np.argwhere(mask_data > 0)  # 提取掩码为1的索引（非零像素）
+
+                if len(mask_indices) > 0:
+                    # 计算掩码的平均坐标
+                    avg_y, avg_x = np.mean(mask_indices, axis=0)
+                    current_frame_coords.append(f"Object {obj_id}: ({int(avg_x)}, {int(avg_y)})")
+                else:
+                    print(f"Warning: Empty mask for object {obj_id} in frame {frame_idx}")
+        
+        # 存储每个关键帧的结果
+        key_frame_coordinates[f"key_frame{frame_idx}"] = current_frame_coords
+
+    # 输出每个关键帧的物体坐标
+    for key_frame, coordinates in key_frame_coordinates.items():
+        print(f"{key_frame}: {coordinates}")
+
+    output_file = "/home/bw2716/VLMTutor/key_frame_bbx.csv"
+
+    # 打开CSV文件进行写入
+    with open(output_file, mode='a', newline='') as file:
+        writer = csv.writer(file)
+
+        # 初始化一个列表来存储拼接后的字符串
+        all_coordinates = []
+
+        # 遍历每个关键帧的物体坐标，拼接字符串
+        for key_frame, coordinates in key_frame_coordinates.items():
+            # 将key_frame和其对应的物体坐标拼接在一起
+            coordinates_str = "\n".join(coordinates)
+            all_coordinates.append(f"{key_frame}: {coordinates_str}")
+
+        # 将所有 key_frame: coordinates_str 拼接为一个完整的字符串
+        final_coordinates_str = "\n".join(all_coordinates)
+
+        # 将 input_demo_name 和拼接后的内容写入CSV
+        writer.writerow([input_video_path, final_coordinates_str])
 
     painted_frames = []
     for i in range(len(frame_names)):
         img = cv2.imread(os.path.join(video_dir, frame_names[i]))
         img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
         for k in video_segments[i].keys():
-            img = contour_painter(img, video_segments[i][k][0], contour_color=k)
+            img = contour_painter(img, video_segments[i][k][0], contour_color=k, ann_obj_id=k)
         painted_frames.append(img)
 
     mask_add = {}
@@ -654,7 +676,7 @@ def main(input_video_path, output_video_path, key_frames):
         mask_add[k] = []
         mask_min[k] = []
 
-    # write_video(painted_frames, output_video_path, fps=30)
+    write_video(painted_frames, output_video_path, fps=30)
 
     for i in range(len(frame_names) - 1):
         for k in video_segments[i].keys():
@@ -678,8 +700,11 @@ if __name__ == "__main__":
     parser.add_argument('--input', type=str, help='Path to the input video')
     parser.add_argument('--output', type=str, help='Path to the output video')
     parser.add_argument('--key_frames', nargs='+', type=int, help='List of key frame indices')
-    
+
     args = parser.parse_args()
+
+    # 打印接收到的 key_frames 列表，检查是否正确传递
+    print(f"Received key_frames: {args.key_frames}")
     
     # 调用 main 函数
     main(args.input, args.output, args.key_frames)

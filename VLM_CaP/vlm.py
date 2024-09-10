@@ -1,9 +1,5 @@
 import copy
 import numpy as np
-# from src.env import PickPlaceEnv
-# from src.env import ALL_BLOCKS, ALL_BOWLS
-# from src.LMP import LMP, LMP_wrapper, LMPFGen
-# from src.configs import cfg_tabletop, lmp_tabletop_coords
 import cv2
 import shapely
 from shapely.geometry import *
@@ -48,20 +44,21 @@ def get_object_list(selected_frames):
         {
             "role": "system",
             "content": [
-                "You are a visual object detector. Your task is to count and identify the objects in the provided image that are on the desk. Focus on objects classified as grasped_objects and containers. The objects have been outlined with contours of different colors for easier distinction."
+                "You are a visual object detector. Your task is to count and identify the objects in the provided image that are on the desk. Focus on objects classified as grasped_objects and containers. The objects have been outlined with contours of different colors and labeled with an index for easier distinction. But only use the index for clear classification in your answer."
             ],
         },
         {
             "role": "user",
             "content": [
-                "There are two kinds of objects, grasped_objects and containers in the environment. We only care about objects on the desk. The objects have been outlined with contours of different colors for easier distinction.",
-                "Notice that there might be similar objects. You are supposed to use the color of its contour to distinguish between similar objects."
+                "There are two kinds of objects, grasped_objects and containers in the environment. We only care about objects on the desk. The objects have been outlined with contours of different colors abnd labeled with an index for easier distinction.",
+                "Notice that there might be similar objects. You are supposed to use the index to distinguish between similar objects."
+                "If you observe that an object has not been labeled with an index, you need to add an index based on the existing indexes to describe that object. The contour is only used to make it easier for you to distinguish between objects. Only use indexes for classfication in your answer."
                 "Based on the input picture, answer:",
                 "1. How many objects are there in the environment?",
                 "2. What are these objects?",
                 "You should respond in the format of the following example:",
                 "Number: 1",
-                "Objects: red pepper, red tomato, white bowl (yellow contour), white bowl (red contour)",
+                "Objects: red pepper (ID: 1), red tomato (ID: 2), white bowl (ID:3), white bowl (ID: 4)",
                 *map(lambda x: {"image": x, "resize": 768}, selected_frames[0:1]),  # use first picture for environment objects
             ],
         },
@@ -105,35 +102,34 @@ def extract_keywords_reference(response):
         return None
 
 def is_frame_relevant(response):
-    return "hand is holding an object" in response.lower()
+    return "hand is manipulating an object" in response.lower()
 
 def parse_closest_object_and_relationship(response):
     pattern = r"Closest Object: ([^,]+), (.+)"
     match = re.search(pattern, response)
     if match:
         return match.group(1), match.group(2)
-    print("Error parsing closest object and relationship from response:", response)
+    print("Error parsing reference object and relationship from response:", response)
     return None, None
 
-def process_images(selected_frames, obj_list):
+def process_images(selected_frames, obj_list, bbx_list):
     string_cache = ""  # cache for CaP operations
     i = 1
 
     while i < len(selected_frames):
-        # Check if the first frame (i) is relevant (i.e., hand is holding an object)
         input_frame_pick = selected_frames[i:i+1]
         prompt_messages_relevance_pick = [
             {
                 "role": "system",
                 "content": [
-                    "You are an operations inspector. You need to check whether the hand in operation is holding an object. The objects have been outlined with contours of different colors for easier distinction."
+                    "You are an operations inspector. You need to check whether the hand in operation is holding an object. The objects have been outlined with contours of different colors and labeled with indexes for easier distinction."
                 ],
             },
             {
                 "role": "user",
                 "content": [
-                    "This is a picture from a pick-and-drop task. Please determine if the hand is holding an object.", 
-                    "Respond with 'Hand is holding an object' or 'Hand is not holding an object'.",
+                    "This is a picture from a pick-and-drop task. Please determine if the hand is manipulating an object.", 
+                    "Respond with 'Hand is manipulating an object' or 'Hand is not manipulating an object'.",
                     *map(lambda x: {"image": x, "resize": 768}, input_frame_pick),
                 ],
             },
@@ -149,17 +145,17 @@ def process_images(selected_frames, obj_list):
             {
                 "role": "system",
                 "content": [
-                    "You are an operation inspector. You need to check which object is being picked in a pick-and-drop task. The objects have been outlined with contours of different colors for easier distinction."
+                    "You are an operation inspector. You need to check which object is being picked in a pick-and-drop task. The objects have been outlined with contours of different colors and labeled with indexes for easier distinction."
                 ],
             },
             {
                 "role": "user",
                 "content": [
-                    f"This is a picture describing the pick state of a pick-and-drop task. The objects in the environment are {obj_list}. One of the objects is being picked by a human hand or robot gripper now. The objects have been outlined with contours of different colors for easier distinction.",
+                    f"This is a picture describing the pick state of a pick-and-drop task. The objects in the environment are {obj_list}. One of the objects is being picked by a human hand or robot gripper now. The objects have been outlined with contours of different colors and labeled with indexes for easier distinction.",
                     "Based on the input picture and object list, answer:",
                     "1. Which object is being picked",
                     "You should respond in the format of the following example:",
-                    "Object Picked: red block",
+                    "Object Picked: red block (ID: 1)",
                     *map(lambda x: {"image": x, "resize": 768}, input_frame_pick),
                 ],
             },
@@ -180,14 +176,14 @@ def process_images(selected_frames, obj_list):
             {
                 "role": "system",
                 "content": [
-                    "You are an operations inspector. You need to check whether the hand in operation is holding an object. The objects have been outlined with contours of different colors for easier distinction."
+                    "You are an operations inspector. You need to check whether the hand in operation is holding an object. The objects have been outlined with contours of different colors and labeled with indexes for easier distinction."
                 ],
             },
             {
                 "role": "user",
                 "content": [
-                    "This is a picture from a pick-and-drop task. Please determine if the hand is holding an object.",
-                    "Respond with 'Hand is holding an object' or 'Hand is not holding an object'.",
+                    "This is a picture from a pick-and-drop task. Please determine if the hand is manipulating an object.",
+                    "Respond with 'Hand is manipulating an object' or 'Hand is not manipulating an object'.",
                     *map(lambda x: {"image": x, "resize": 768}, input_frame_drop),
                 ],
             },
@@ -198,12 +194,12 @@ def process_images(selected_frames, obj_list):
             i += 1
             continue
 
-        # closest object 
+        # reference object 
         prompt_messages_reference = [
             {
                 "role": "system",
                 "content": [
-                    "You are an operation inspector. You need to find the reference object for the placement location of the picked object in the pick-and-place process. Notice that the reference object can vary based on the task. If this is a storage task, the reference object should be the container into which the items are stored. If this is a stacking task, the reference object should be the object that best expresses the orientation of the arrangement. The objects have been outlined with contours of different colors for easier distinction."
+                    "You are an operation inspector. You need to find the reference object for the placement location of the picked object in the pick-and-place process. Notice that the reference object can vary based on the task. If this is a storage task, the reference object should be the container into which the items are stored. If this is a stacking task, the reference object should be the object that best expresses the orientation of the arrangement. The objects have been outlined with contours of different colors and labeled with different indexes for easier distinction."
                 ],
             },
             {
@@ -213,7 +209,7 @@ def process_images(selected_frames, obj_list):
                     "Based on the input picture and object list, answer:",
                     f"1. Which object in the rest of object list do you choose as a reference object to {object_picked}",
                     "You should respond in the format of the following example without any additional information or reason steps:",
-                    "Reference Object: red block",
+                    "Reference Object: red block (ID: 2)",
                     *map(lambda x: {"image": x, "resize": 768}, input_frame_drop),
                 ],
             },
@@ -222,18 +218,21 @@ def process_images(selected_frames, obj_list):
         print(response_reference)
         object_reference = extract_keywords_reference(response_reference)
 
+        current_bbx = bbx_list[i] if i < len(bbx_list) else {}
+
         # and relative position
         prompt_messages_relationship = [
             {
                 "role": "system",
                 "content": [
-                    "You are a VLMTutor. You will describe the drop state of a pick-and-drop task from a demo picture. You must pay specific attention to the spatial relationship between picked object and reference object in the picture and be correct and accurate with directions. The objects have been outlined with contours of different colors for easier distinction.",
-                    "Pay attention to if the picked object and reference object are in contact. You must specify if they are.",
+                    "You are a VLMTutor. You will describe the drop state of a pick-and-drop task from a demo picture. You must pay specific attention to the spatial relationship between picked object and reference object in the picture and be correct and accurate with directions. The objects have been outlined with contours of different colors and labeled with indexes for easier distinction.",
+                    "Due to limitation of vision models, the contours and index labels might not cover every objects in the environment. If you notice any unannotated objects in the obj_list, make sure you handle them properly.",
                 ],
                 "role": "user",
                 "content": [
-                    f"This is a picture describing the drop state of a pick-and-drop task. The objects in the environment are object list: {obj_list}. {object_picked} is being dropped by a human hand or robot gripper now. The objects have been outlined with contours of different colors for easier distinction.",
-                    f"It is being dropped somewhere near {object_reference}. Based on the input picture and object list, answer:",
+                    f"This is a picture describing the drop state of a pick-and-drop task. The objects in the environment are object list: {obj_list}. {object_picked} is being dropped by a human hand or robot gripper now. The objects have been outlined with contours of different colors and labeled with indexes for easier distinction.",
+                    "To help you better understand the spatial relationship, a bouunding box list is given to you. Notice that the bounding boxes of objects in the bounding box list are distinguished by labels. These labels correspond one-to-one with the labels of the objects in the image."
+                    f"The object picked {object_picked} is being dropped somewhere near {object_reference}. Based on the input picture, object list and the corresponding bounding box list, answer:",
                     f"Drop {object_picked} to which relative position to the {object_reference}? You need to mention the name of objects in your answer",
                     f"There are totally six kinds of relative position, and the direction means the visual direction of the picture.",
                     f"1. In (({object_picked} is contained in the {object_reference})"
@@ -297,8 +296,37 @@ def convert_video_to_mp4(input_path):
     print(f"Video converted successfully: {output_path}")
     return output_path
 
+def extract_bbx_list_from_csv(csv_file, input_video_path):
+    """
+    根据输入的视频路径，从CSV文件中提取对应的bbx列表，并按key_frame的index排序。
+    """
+    with open(csv_file, mode='r') as file:
+        reader = csv.DictReader(file)
+        for row in reader:
+            # 这里可以确保 input_video_path 与 row['demo'] 是否完全匹配
+            if row['demo'] == input_video_path:
+                # 提取bbx列，并按照key_frame的index排序
+                bbx_info = row['bbx_list']
+                # 提取出关键帧信息，格式为 key_frame<number>: <bounding_box_data>
+                key_frame_data = re.findall(r'key_frame(\d+): (.+)', bbx_info)
+                # 按关键帧 index 排序
+                sorted_bbx_list = sorted(key_frame_data, key=lambda x: int(x[0]))
 
-def main(input_video_path, frame_index_list, demo_name):
+                # 处理排序后的信息并转换为 {index: bounding_box} 的形式
+                bbx_list = []
+                for _, objects in sorted_bbx_list:
+                    # 匹配 Object 的 bounding box 数据，假设 x 和 y 是整数
+                    object_bbx = re.findall(r'Object (\d+): \((\d+), (\d+)\)', objects)
+                    # 如果需要支持浮点数，可以将 (\d+) 改为 ([\d.]+)
+                    bbx_list.append({int(obj_index): (int(x), int(y)) for obj_index, x, y in object_bbx})
+
+                return bbx_list  # 返回处理后的 bbx_list
+
+    # 如果没有找到对应的 demo，返回 None
+    return None
+
+
+def main(input_video_path, frame_index_list, demo_name, csv_file):
     # 如果 frame_index_list 是字符串，使用 ast.literal_eval 将其转换为列表
     # 现在转换为整数列表
     frame_index_list = ast.literal_eval(frame_index_list)
@@ -364,8 +392,9 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Process video and key frame extraction.")
     parser.add_argument('--input', type=str, required=True, help='Input video path')
     parser.add_argument('--list', type=str, required=True, help='List of key frame indexes')
+    parser.add_argument('--bbx_csv', type=str, required=True, help='csv of bbx')
     parser.add_argument('--demo', type=str, required=True, help='demo name')
 
     args = parser.parse_args()
     # Call the main function with arguments
-    main(args.input, args.list, args.demo)
+    main(args.input, args.list, args.demo, args.csv_file)

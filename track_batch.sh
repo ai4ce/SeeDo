@@ -1,15 +1,15 @@
 # 定义输入和输出文件夹
-input_folder="/home/bw2716/VLMTutor/media/input_demo/wooden_block/"
-output_folder="/home/bw2716/VLMTutor/media/intermediate_demo/wooden_block_number/"
-csv_file="/home/bw2716/VLMTutor/wooden_block_selected_valleys.csv"
+input_folder="/home/bw2716/VLMTutor/media/input_demo/new_wooden_block/"
+output_folder="/home/bw2716/VLMTutor/media/output_demo/new_wooden_block/"
+csv_file="/home/bw2716/VLMTutor/new_wooden_block_selected_valleys.csv"
 
 # 遍历 long_demo1.mp4 到 long_demo20.mp4
-for i in {1..10}; do
+for i in {1..29}; do
   input_video="${input_folder}wooden_block${i}.mp4"
   output_video="${output_folder}wooden_block${i}_contour_num.mp4"
 
   # 获取当前 demo 名字对应的 key_frames 列表
-  demo_name="wooden_block${i}_sam2_contour"
+  demo_name="wooden_block${i}_contour_num.mp4"
   
   # 调试输出，检查是否正确匹配到 demo 名字
   echo "Searching for $demo_name in CSV file..."

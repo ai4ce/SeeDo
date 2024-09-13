@@ -5,8 +5,6 @@ import shapely
 from shapely.geometry import *
 from shapely.affinity import *
 import matplotlib.pyplot as plt
-# from moviepy.editor import ImageSequenceClip
-# import moviepy
 from openai import OpenAI
 from src.key import mykey, projectkey
 import sys
@@ -44,21 +42,23 @@ def get_object_list(selected_frames):
         {
             "role": "system",
             "content": [
-                "You are a visual object detector. Your task is to count and identify the objects in the provided image that are on the desk. Focus on objects classified as grasped_objects and containers. The objects have been outlined with contours of different colors and labeled with an index for easier distinction. But only use the index for clear classification in your answer."
+                "You are a visual object detector. Your task is to count and identify the objects in the provided image that are on the desk. Focus on objects classified as grasped_objects and containers. The objects have been outlined with contours of different colors and labeled with an index for easier distinction. But only use the index for clear classification in your answer.",
+                "Due to limitation of vision models, the contours and index labels might not cover every objects in the environment. If you notice any unannotated objects in the demo or in the object list, make sure you handle them properly.",
             ],
         },
         {
             "role": "user",
             "content": [
-                "There are two kinds of objects, grasped_objects and containers in the environment. We only care about objects on the desk. The objects have been outlined with contours of different colors abnd labeled with an index for easier distinction.",
+                "There are two kinds of objects, grasped_objects and containers in the environment. We only care about objects on the desk. The objects have been outlined with contours of different colors abnd labeled with an index for easier distinction. Do not count in hand or person as objects.",
                 "Notice that there might be similar objects. You are supposed to use the index to distinguish between similar objects."
+                "Due to limitation of vision models, the contours and index labels might not cover every objects in the environment. If you notice any unannotated objects in the demo or in the object list, make sure you handle them properly.",
                 "If you observe that an object has not been labeled with an index, you need to add an index based on the existing indexes to describe that object. The contour is only used to make it easier for you to distinguish between objects. Only use indexes for classfication in your answer."
                 "Based on the input picture, answer:",
                 "1. How many objects are there in the environment?",
                 "2. What are these objects?",
                 "You should respond in the format of the following example:",
                 "Number: 1",
-                "Objects: red pepper (ID: 1), red tomato (ID: 2), white bowl (ID:3), white bowl (ID: 4)",
+                "Objects: red pepper (ID: 1), red tomato (ID: 2), white bowl (ID: 3), white bowl (ID: 4)",
                 *map(lambda x: {"image": x, "resize": 768}, selected_frames[0:1]),  # use first picture for environment objects
             ],
         },
@@ -172,27 +172,6 @@ def process_images(selected_frames, obj_list, bbx_list):
 
         # Check if the second frame (i) is relevant (i.e., hand is holding an object)
         input_frame_drop = selected_frames[i:i+1]
-        prompt_messages_relevance_drop = [
-            {
-                "role": "system",
-                "content": [
-                    "You are an operations inspector. You need to check whether the hand in operation is holding an object. The objects have been outlined with contours of different colors and labeled with indexes for easier distinction."
-                ],
-            },
-            {
-                "role": "user",
-                "content": [
-                    "This is a picture from a pick-and-drop task. Please determine if the hand is manipulating an object.",
-                    "Respond with 'Hand is manipulating an object' or 'Hand is not manipulating an object'.",
-                    *map(lambda x: {"image": x, "resize": 768}, input_frame_drop),
-                ],
-            },
-        ]
-        response_relevance_drop = call_openai_api(prompt_messages_relevance_drop)
-        print(response_relevance_drop)
-        if not is_frame_relevant(response_relevance_drop):
-            i += 1
-            continue
 
         # reference object 
         prompt_messages_reference = [
@@ -220,36 +199,42 @@ def process_images(selected_frames, obj_list, bbx_list):
 
         current_bbx = bbx_list[i] if i < len(bbx_list) else {}
 
-        # and relative position
         prompt_messages_relationship = [
             {
                 "role": "system",
                 "content": [
                     "You are a VLMTutor. You will describe the drop state of a pick-and-drop task from a demo picture. You must pay specific attention to the spatial relationship between picked object and reference object in the picture and be correct and accurate with directions. The objects have been outlined with contours of different colors and labeled with indexes for easier distinction.",
-                    "Due to limitation of vision models, the contours and index labels might not cover every objects in the environment. If you notice any unannotated objects in the obj_list, make sure you handle them properly.",
+                    "Due to limitation of vision models, the contours and index labels might not cover every objects in the environment. If you notice any unannotated objects in the demo or in the object list, make sure you handle them properly.",
                 ],
+            },
+            {
                 "role": "user",
                 "content": [
                     f"This is a picture describing the drop state of a pick-and-drop task. The objects in the environment are object list: {obj_list}. {object_picked} is being dropped by a human hand or robot gripper now. The objects have been outlined with contours of different colors and labeled with indexes for easier distinction.",
-                    "To help you better understand the spatial relationship, a bouunding box list is given to you. Notice that the bounding boxes of objects in the bounding box list are distinguished by labels. These labels correspond one-to-one with the labels of the objects in the image."
+                    f"To help you better understand the spatial relationship, a bounding box list is given to you. Notice that the bounding boxes of objects in the bounding box list are distinguished by labels. These labels correspond one-to-one with the labels of the objects in the image. The bounding box list is: {bbx_list}",
+                    "The coordinates of the bounding box represent the center point of the object. The format is two coordinates (x,y). The origin of the coordinates is at the top-left corner of the image. If there are two objects A(x1, y1) and B(x2, y2), a significantly smaller x2 compared to x1 indicates that B is to the left of A; a significantly greater x2 compared to x1 indicates that B is to the right of A; a significantly smaller y2 compared to y1 indicates that B is at the back of A;  a significantly greater y2 compared to y1 indicates that B is in front of A."
+                    "Pay attention to distinguish between at the back of and on top of. If B and A has a visual gap, they are not in touch. Thus B is at the back of A. However, if they are very close, this means B and A are in contact, thus B is on top of A."
+                    "Notice that the largest difference in corresponding coordinates often represents the most significant feature. If you have coordinates with small difference in x but large difference in y, then coordinates y will represent most significant feature. Make sure to use the picture together with coordinates."
                     f"The object picked {object_picked} is being dropped somewhere near {object_reference}. Based on the input picture, object list and the corresponding bounding box list, answer:",
-                    f"Drop {object_picked} to which relative position to the {object_reference}? You need to mention the name of objects in your answer",
+                    f"Drop {object_picked} to which relative position to the {object_reference}? You need to mention the name of objects in your answer, be sure to mention IDs if the objects are similar.",
                     f"There are totally six kinds of relative position, and the direction means the visual direction of the picture.",
-                    f"1. In (({object_picked} is contained in the {object_reference})"
+                    f"1. In (({object_picked} is contained in the {object_reference})",
                     f"2. On top of ({object_picked} is stacked on the {object_reference}, {object_reference} supports {object_picked})",
-                    f"3. above ({object_picked} is located in higher position than the {object_reference})",
-                    f"4. below ({object_picked} is located in lower position than the {object_reference})",
+                    f"3. At the back of (in demo it means {object_picked} is positioned farther to the viewer relative to the {object_reference}, which means the second coordinate in bounding box is significantly smaller)",
+                    f"4. In front of (in demo it means {object_picked} is positioned closer to the viewer or relative to the {object_reference}, which means the second coordinate in bounding box is significantly greater)",
                     "5. to the left",
                     "6. to the right",
-                    f"You must choose one relative position first. For the 'above','below','to the left','to the right' direction, If the {object_picked} and {object_reference} are in contact or overlapped, you must specify '(in contact)' afertwards"
-                    "You should respond in the format of the following example without any additional information or reason steps, be sure to mention the object picked and closest object",
+                    f"You must choose one relative position."
+                    "Due to limitation of vision models, the contours and index labels might not cover every objects in the environment. If you notice any unannotated objects in the demo or in the object list, make sure you handle them properly.",
+                    "You should respond in the format of the following example without any additional information or reason steps, be sure to mention the object picked and reference object.",
                     f"Drop yellow corn to the left of the red chili",
-                    f"Drop red chili in the white bowl"
-                    f"Drop red tomato to the right of the purple eggplant (in contact)",
+                    f"Drop red chili in the white bowl",
+                    f"Drop wooden block (ID:1) to the right of the wooden block (ID:0)",
                     *map(lambda x: {"image": x, "resize": 768}, input_frame_drop),
                 ],
             },
         ]
+
         response_relationship = call_openai_api(prompt_messages_relationship)
         print(response_relationship)
         string_cache += response_relationship + " and then "
@@ -270,13 +255,12 @@ def save_results_to_csv(demo_name, num, obj_list, string_cache, output_file):
 
         # 如果文件不存在，则写入标题行
         if not file_exists:
-            writer.writerow(["object", "action list"])
+            writer.writerow(["demo", "object", "action list"])
         
         # 写入数据
-        writer.writerow([f"{num} objects: {', '.join(obj_list)}", string_cache])
+        writer.writerow([f"{demo_name}", f"{num} objects: {', '.join(obj_list)}", string_cache])
 
     print(f"Results appended to {output_file}")
-
 
 def convert_video_to_mp4(input_path):
     """
@@ -325,11 +309,16 @@ def extract_bbx_list_from_csv(csv_file, input_video_path):
     # 如果没有找到对应的 demo，返回 None
     return None
 
-
 def main(input_video_path, frame_index_list, demo_name, csv_file):
     # 如果 frame_index_list 是字符串，使用 ast.literal_eval 将其转换为列表
     # 现在转换为整数列表
     frame_index_list = ast.literal_eval(frame_index_list)
+
+    # 从csv_file中提取与input_video_path对应的bbx_list
+    bbx_list = extract_bbx_list_from_csv(csv_file, input_video_path)
+    if not bbx_list:
+        print(f"No matching bbx list found for {input_video_path}")
+        return
 
     # video path
     video_path = input_video_path
@@ -339,10 +328,10 @@ def main(input_video_path, frame_index_list, demo_name, csv_file):
     selected_frame_index = frame_index_list
 
     # Convert the video to H.264 encoded .mp4 format
-    converted_video_path = convert_video_to_mp4(video_path)
+    # converted_video_path = convert_video_to_mp4(video_path)
 
     # Open the converted video
-    cap = cv2.VideoCapture(converted_video_path)
+    cap = cv2.VideoCapture(video_path)
 
     # Manually calculate total number of frames
     actual_frame_count = 0
@@ -381,11 +370,11 @@ def main(input_video_path, frame_index_list, demo_name, csv_file):
     print("available objects:", obj_list)
     # obj_list = "green corn, orange carrot, red pepper, white bowl, glass container"
     # process the key frames
-    string_cache = process_images(selected_frames1, obj_list)
+    string_cache = process_images(selected_frames1, obj_list, bbx_list)
     if string_cache.endswith(" and then "):
         my_string = string_cache.removesuffix(" and then ")
 
-    results_file = "./sam2_contour_wooden_block_results.csv"
+    results_file = "./new_wooden_block_results.csv"
     save_results_to_csv(demo_name, num, obj_list, string_cache, results_file)
 
 if __name__ == "__main__":
@@ -397,4 +386,4 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
     # Call the main function with arguments
-    main(args.input, args.list, args.demo, args.csv_file)
+    main(args.input, args.list, args.demo, args.bbx_csv)

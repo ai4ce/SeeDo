@@ -17,7 +17,7 @@ import csv
 os.environ["CUDA_VISIBLE_DEVICES"] = "1"
 
 class FrameExtractor:
-    def __init__(self, video_path, output_dir, gaussian_sigma=5, prominence=0.8, csv_file='selected_valleys.csv'):
+    def __init__(self, video_path, output_dir, gaussian_sigma=5, prominence=0.8, csv_file='new_wooden_block_selected_valleys.csv'):
         self._folder_init(video_path, output_dir)
         self._mediapipe_init()
         self._visualization_init()
@@ -56,7 +56,7 @@ class FrameExtractor:
             self.make_video(handedness)
         
         print("Deciding which hand to focus on.")
-        self.handedness = self.decide_handedness()
+        self.handedness = "Right"
         print(f"The decided handedness is {self.handedness}.")
 
         print(f"Processing the speed curve of {self.handedness} hand.")

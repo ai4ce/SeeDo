@@ -80,19 +80,24 @@ def get_object_list(video_path, client):
         {
             "role": "system",
             "content": [
-                "You are a visual object detector. Your task is to count and identify the objects in the provided image that are on the desk. Focus on objects classified as grasped_objects and containers."
+                "You are a visual object detector. Your task is to count and identify the objects in the provided image that are on the desk. Focus on objects classified as grasped_objects and containers.",
+                "Do not include hand or gripper in your answer",
             ],
         },
         {
             "role": "user",
             "content": [
                 "There are two kinds of objects, grasped_objects and containers in the environment. We only care about objects on the desk.",
+                "You must strictly follow the rules below: Even if there are multiple objects that appear identical, you must repeat their names in your answer according to their quantity. For example, if there are three wooden blocks, you must mention 'wooden block' three times in your answer."
+                "Be careful and accurate with the number. Do not miss or add additional object in your answer."
                 "Based on the input picture, answer:",
                 "1. How many objects are there in the environment?",
                 "2. What are these objects?",
                 "You should respond in the format of the following example:",
-                "Number: 1",
+                "Number: 3",
                 "Objects: red pepper, red tomato, white bowl",
+                "Number: 4",
+                "Objects: wooden block, wooden block, wooden block, wooden block",
                 *map(lambda x: {"image": x, "resize": 768}, base64Frames[0:1]),  # use first picture for environment objects
             ],
         },
@@ -637,11 +642,12 @@ def main(input_video_path, output_video_path, key_frames):
         # 存储每个关键帧的结果
         key_frame_coordinates[f"key_frame{frame_idx}"] = current_frame_coords
 
+
     # 输出每个关键帧的物体坐标
     for key_frame, coordinates in key_frame_coordinates.items():
         print(f"{key_frame}: {coordinates}")
 
-    output_file = "/home/bw2716/VLMTutor/key_frame_bbx.csv"
+    output_file = "/home/bw2716/VLMTutor/new_vegetable_bbx.csv"
 
     # 打开CSV文件进行写入
     with open(output_file, mode='a', newline='') as file:
@@ -662,38 +668,38 @@ def main(input_video_path, output_video_path, key_frames):
         # 将 input_demo_name 和拼接后的内容写入CSV
         writer.writerow([input_video_path, final_coordinates_str])
 
-    painted_frames = []
-    for i in range(len(frame_names)):
-        img = cv2.imread(os.path.join(video_dir, frame_names[i]))
-        img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-        for k in video_segments[i].keys():
-            img = contour_painter(img, video_segments[i][k][0], contour_color=k, ann_obj_id=k)
-        painted_frames.append(img)
+    # painted_frames = []
+    # for i in range(len(frame_names)):
+    #     img = cv2.imread(os.path.join(video_dir, frame_names[i]))
+    #     img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+    #     for k in video_segments[i].keys():
+    #         img = contour_painter(img, video_segments[i][k][0], contour_color=1, ann_obj_id=k)
+    #     painted_frames.append(img)
 
-    mask_add = {}
-    mask_min = {}
-    for k in video_segments[i].keys():
-        mask_add[k] = []
-        mask_min[k] = []
+    # mask_add = {}
+    # mask_min = {}
+    # for k in video_segments[i].keys():
+    #     mask_add[k] = []
+    #     mask_min[k] = []
 
-    write_video(painted_frames, output_video_path, fps=30)
+    # write_video(painted_frames, output_video_path, fps=30)
 
-    for i in range(len(frame_names) - 1):
-        for k in video_segments[i].keys():
-            mask_before = video_segments[i][k][0].copy()
-            mask_after = video_segments[i + 1][k][0].copy()
-            mask_after[mask_before] = False
-            add_cnt = np.sum(mask_after)
+    # for i in range(len(frame_names) - 1):
+    #     for k in video_segments[i].keys():
+    #         mask_before = video_segments[i][k][0].copy()
+    #         mask_after = video_segments[i + 1][k][0].copy()
+    #         mask_after[mask_before] = False
+    #         add_cnt = np.sum(mask_after)
 
-            mask_before = video_segments[i][k][0].copy()
-            mask_after = video_segments[i + 1][k][0].copy()
-            mask_before[mask_after] = False
-            min_cnt = np.sum(mask_before)
+    #         mask_before = video_segments[i][k][0].copy()
+    #         mask_after = video_segments[i + 1][k][0].copy()
+    #         mask_before[mask_after] = False
+    #         min_cnt = np.sum(mask_before)
 
-            mask_add[k].append(add_cnt.item())
-            mask_min[k].append(min_cnt.item())
+    #         mask_add[k].append(add_cnt.item())
+    #         mask_min[k].append(min_cnt.item())
             
-    process_mask_signal(mask_add, mask_min)
+    # process_mask_signal(mask_add, mask_min)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Process video with SAM and GroundingDINO.")

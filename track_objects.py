@@ -408,8 +408,8 @@ def write_video_with_plot(video_frames, plot_frames, output_path, fps):
     print('Write video success')
     video_writer.release()
 
-def main(input_video_path, output_video_path, key_frames):
-    # 设置OpenAI客户端
+def main(input_video_path, output_video_path, key_frames, bbx_file):
+    #First Part: get object list from first key_frame using VLM
     client = OpenAI(api_key=projectkey)
 
     ckpt_repo_id = "ShilongLiu/GroundingDINO"
@@ -449,7 +449,9 @@ def main(input_video_path, output_video_path, key_frames):
 
     num, obj_list = extract_num_object(object_list_response)
     print(f"Generated prompt: {obj_list}")
-
+    
+    #Second Part: Use GroundedSAM2 to track the objects
+    #Parameters for GroundingDINO
     BOX_TRESHOLD = 0.3
     TEXT_TRESHOLD = 0.25
     object_counts = Counter(obj_list)
@@ -480,6 +482,12 @@ def main(input_video_path, output_video_path, key_frames):
                 best_phrases.append(phrases[i])  # 对应的物体短语
                 best_logits.append(logits[i])  # 对应的logit
 
+    print(best_boxes)
+    print(best_logits)
+    print(best_phrases)
+
+    input("1")
+
     # 将 best_boxes 列表转换为单个 tensor
     if best_boxes:
         best_boxes = torch.cat(best_boxes)  # 合并成一个张量
@@ -502,8 +510,6 @@ def main(input_video_path, output_video_path, key_frames):
 
     masks = masks.cpu()
     masks_np = masks.numpy()
-
-
 
     h, w = masks_np[0][0].shape
     pixel_cnt = h * w
@@ -621,6 +627,7 @@ def main(input_video_path, output_video_path, key_frames):
             for i, out_obj_id in enumerate(out_obj_ids)
         }
     
+    #Third Part: select the key frames and compute the center coordinates of masks of different objects
     key_frame_coordinates = {}
     # 遍历关键帧
     for frame_idx in key_frames:
@@ -647,9 +654,9 @@ def main(input_video_path, output_video_path, key_frames):
     for key_frame, coordinates in key_frame_coordinates.items():
         print(f"{key_frame}: {coordinates}")
 
-    output_file = "/home/bw2716/VLMTutor/new_vegetable_bbx.csv"
+    output_file = bbx_file
 
-    # 打开CSV文件进行写入
+    # store the coordinates in an output file for further reference
     with open(output_file, mode='a', newline='') as file:
         writer = csv.writer(file)
 
@@ -668,44 +675,46 @@ def main(input_video_path, output_video_path, key_frames):
         # 将 input_demo_name 和拼接后的内容写入CSV
         writer.writerow([input_video_path, final_coordinates_str])
 
-    # painted_frames = []
-    # for i in range(len(frame_names)):
-    #     img = cv2.imread(os.path.join(video_dir, frame_names[i]))
-    #     img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-    #     for k in video_segments[i].keys():
-    #         img = contour_painter(img, video_segments[i][k][0], contour_color=1, ann_obj_id=k)
-    #     painted_frames.append(img)
+    #Fourth Part: append all the painted frames into a video
+    painted_frames = []
+    for i in range(len(frame_names)):
+        img = cv2.imread(os.path.join(video_dir, frame_names[i]))
+        img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+        for k in video_segments[i].keys():
+            img = contour_painter(img, video_segments[i][k][0], contour_color=1, ann_obj_id=k)
+        painted_frames.append(img)
 
-    # mask_add = {}
-    # mask_min = {}
-    # for k in video_segments[i].keys():
-    #     mask_add[k] = []
-    #     mask_min[k] = []
+    mask_add = {}
+    mask_min = {}
+    for k in video_segments[i].keys():
+        mask_add[k] = []
+        mask_min[k] = []
 
-    # write_video(painted_frames, output_video_path, fps=30)
+    write_video(painted_frames, output_video_path, fps=30)
 
-    # for i in range(len(frame_names) - 1):
-    #     for k in video_segments[i].keys():
-    #         mask_before = video_segments[i][k][0].copy()
-    #         mask_after = video_segments[i + 1][k][0].copy()
-    #         mask_after[mask_before] = False
-    #         add_cnt = np.sum(mask_after)
+    for i in range(len(frame_names) - 1):
+        for k in video_segments[i].keys():
+            mask_before = video_segments[i][k][0].copy()
+            mask_after = video_segments[i + 1][k][0].copy()
+            mask_after[mask_before] = False
+            add_cnt = np.sum(mask_after)
 
-    #         mask_before = video_segments[i][k][0].copy()
-    #         mask_after = video_segments[i + 1][k][0].copy()
-    #         mask_before[mask_after] = False
-    #         min_cnt = np.sum(mask_before)
+            mask_before = video_segments[i][k][0].copy()
+            mask_after = video_segments[i + 1][k][0].copy()
+            mask_before[mask_after] = False
+            min_cnt = np.sum(mask_before)
 
-    #         mask_add[k].append(add_cnt.item())
-    #         mask_min[k].append(min_cnt.item())
+            mask_add[k].append(add_cnt.item())
+            mask_min[k].append(min_cnt.item())
             
-    # process_mask_signal(mask_add, mask_min)
+    process_mask_signal(mask_add, mask_min)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Process video with SAM and GroundingDINO.")
     parser.add_argument('--input', type=str, help='Path to the input video')
     parser.add_argument('--output', type=str, help='Path to the output video')
     parser.add_argument('--key_frames', nargs='+', type=int, help='List of key frame indices')
+    parser.add_argument('--bbx_file', type=str, help='Path to store coordinates of bounding boxes')
 
     args = parser.parse_args()
 
@@ -713,4 +722,4 @@ if __name__ == "__main__":
     print(f"Received key_frames: {args.key_frames}")
     
     # 调用 main 函数
-    main(args.input, args.output, args.key_frames)
+    main(args.input, args.output, args.key_frames, args.bbx_file)

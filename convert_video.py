@@ -10,7 +10,7 @@ def convert_video_to_30fps(input_path, output_path):
         outputs={output_path: '-c:v libx264 -r 30 -crf 23 -preset fast'}
     )
     ff.run()
-    print(f"Video converted successfully to 15 FPS: {output_path}")
+    print(f"Video converted successfully to 30 FPS: {output_path}")
 
 def batch_convert_videos_to_30fps(input_dir, output_dir, start_block, end_block):
     """
@@ -25,12 +25,12 @@ def batch_convert_videos_to_30fps(input_dir, output_dir, start_block, end_block)
         else:
             print(f"Input file does not exist: {input_file}")
 
-# 设置输入输出目录，以及起始和结束block编号
+# Set the input and output directories, as well as the starting and ending block numbers
 input_directory = "/home/bw2716/VLMTutor/media/input_demo/garments_organization/"
 output_directory = "/home/bw2716/VLMTutor/media/input_demo/garments_organization/"
 
-# 如果输出目录不存在，则创建
+# Create the output directory if it doesn't exist
 os.makedirs(output_directory, exist_ok=True)
 
-# 批量转换 block1 到 block14 的视频并设置帧率为30FPS
+# Batch convert videos from block3 to block3 and set the frame rate to 30 FPS
 batch_convert_videos_to_30fps(input_directory, output_directory, 3, 3)

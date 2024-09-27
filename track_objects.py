@@ -1,45 +1,50 @@
-import os, sys
+import os
+import sys
 import argparse
 import copy
 import gc
-import numpy as np
-import torch
-from PIL import Image, ImageDraw, ImageFont
-from torchvision.ops import box_convert
-from tqdm import *
-import cv2
-import scipy.signal
-import numpy as np
 import json
-import matplotlib.pyplot as plt
 import re
-from openai import OpenAI
+import csv
 import base64
 from io import BytesIO
-from VLM_CaP.src.key import mykey, projectkey
 from collections import Counter
+
+import numpy as np
+import torch
+from PIL import Image
+from torchvision.ops import box_convert
+from tqdm import tqdm
+import cv2
+import scipy.signal
+import matplotlib.pyplot as plt
+
+from openai import OpenAI
+from VLM_CaP.src.key import mykey, projectkey
 from diffusers import StableDiffusionInpaintPipeline
 from sam2.build_sam import build_sam2_video_predictor
-import csv
 
 # Grounding DINO
 from GroundingDINO.groundingdino.models import build_model
 from GroundingDINO.groundingdino.util import box_ops
 from GroundingDINO.groundingdino.util.slconfig import SLConfig
-from GroundingDINO.groundingdino.util.utils import clean_state_dict, get_phrases_from_posmap
-from GroundingDINO.groundingdino.util.inference import annotate, load_image, predict, load_image_from_array
+from GroundingDINO.groundingdino.util.utils import clean_state_dict
+from GroundingDINO.groundingdino.util.inference import (
+    annotate,
+    load_image,
+    predict,
+    load_image_from_array,
+)
 
-# segment anything
+# Segment Anything
 from segment_anything import build_sam, SamPredictor
 
-# diffusers
-import PIL
-import requests
-import torch
+# Hugging Face Hub
 from huggingface_hub import hf_hub_download
 
 sys.path.append(os.path.join(os.getcwd(), "GroundingDINO"))
 os.environ["CUDA_VISIBLE_DEVICES"] = "0,1"
+
 
 def image_to_base64(image):
     buffered = BytesIO()
@@ -47,23 +52,25 @@ def image_to_base64(image):
     img_str = base64.b64encode(buffered.getvalue()).decode("utf-8")
     return img_str
 
+
 def call_openai_api(prompt_messages, client):
     params = {
         "model": "gpt-4o",
         "messages": prompt_messages,
         "max_tokens": 400,
-        "temperature": 0
+        "temperature": 0,
     }
     result = client.chat.completions.create(**params)
     return result.choices[0].message.content
 
+
 def get_object_list(video_path, client):
-    # 使用第一帧进行编码
+    # Use the first frame for encoding
     video = cv2.VideoCapture(video_path)
 
     base64Frames = []
     frame_count = 0
-    max_frames = 2  # 只处理前2帧
+    max_frames = 2  # Only process the first 2 frames
 
     while video.isOpened() and frame_count < max_frames:
         success, frame = video.read()
@@ -75,7 +82,7 @@ def get_object_list(video_path, client):
 
     video.release()
     print(len(base64Frames), "frames read.")
-    
+
     prompt_messages_state = [
         {
             "role": "system",
@@ -98,7 +105,7 @@ def get_object_list(video_path, client):
                 "Objects: red pepper, red tomato, white bowl",
                 "Number: 4",
                 "Objects: wooden block, wooden block, wooden block, wooden block",
-                *map(lambda x: {"image": x, "resize": 768}, base64Frames[0:1]),  # use first picture for environment objects
+                *map(lambda x: {"image": x, "resize": 768}, base64Frames[0:1]),
             ],
         },
     ]
@@ -106,21 +113,23 @@ def get_object_list(video_path, client):
     response_state = call_openai_api(prompt_messages_state, client)
     return response_state
 
+
 def extract_num_object(response_state):
-    # extract number of objects
+    # Extract number of objects
     num_match = re.search(r"Number: (\d+)", response_state)
     num = int(num_match.group(1)) if num_match else 0
-    
-    # extract objects
+
+    # Extract objects
     objects_match = re.search(r"Objects: (.+)", response_state)
     objects_list = objects_match.group(1).split(", ") if objects_match else []
-    
-    # construct object list
+
+    # Construct object list
     objects = [obj for obj in objects_list]
-    
+
     return num, objects
 
-def load_model_hf(repo_id, filename, ckpt_config_filename, device='cpu'):
+
+def load_model_hf(repo_id, filename, ckpt_config_filename, device="cpu"):
     cache_config_file = hf_hub_download(repo_id=repo_id, filename=ckpt_config_filename)
 
     args = SLConfig.fromfile(cache_config_file)
@@ -128,11 +137,12 @@ def load_model_hf(repo_id, filename, ckpt_config_filename, device='cpu'):
     args.device = device
 
     cache_file = hf_hub_download(repo_id=repo_id, filename=filename)
-    checkpoint = torch.load(cache_file, map_location='cpu')
-    log = model.load_state_dict(clean_state_dict(checkpoint['model']), strict=False)
+    checkpoint = torch.load(cache_file, map_location="cpu")
+    log = model.load_state_dict(clean_state_dict(checkpoint["model"]), strict=False)
     print("Model loaded from {} \n => {}".format(cache_file, log))
     _ = model.eval()
     return model
+
 
 def read_video(video_path):
     video_capture = cv2.VideoCapture(video_path)
@@ -153,7 +163,13 @@ def read_video(video_path):
         frames.append(frame)
     return frames
 
-def my_annotate(image_source: np.ndarray, boxes: torch.Tensor, logits: torch.Tensor, phrases) -> np.ndarray:
+
+def my_annotate(
+    image_source: np.ndarray,
+    boxes: torch.Tensor,
+    logits: torch.Tensor,
+    phrases,
+) -> np.ndarray:
     h, w, _ = image_source.shape
     boxes = boxes * torch.Tensor([w, h, w, h])
     xyxy = box_convert(boxes=boxes, in_fmt="cxcywh", out_fmt="xyxy").numpy()
@@ -164,44 +180,40 @@ def my_annotate(image_source: np.ndarray, boxes: torch.Tensor, logits: torch.Ten
         x1, y1, x2, y2 = map(int, box)
         label = f"{phrase} {logit:.2f}"
 
-        # 绘制边界框
+        # Draw bounding box
         cv2.rectangle(annotated_frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
 
-        # 绘制标签背景框
-        (text_width, text_height), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 1)
-        cv2.rectangle(annotated_frame, (x1, y1 - text_height - 4), (x1 + text_width, y1), (0, 255, 0), -1)
+        # Draw label background box
+        (text_width, text_height), _ = cv2.getTextSize(
+            label, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 1
+        )
+        cv2.rectangle(
+            annotated_frame,
+            (x1, y1 - text_height - 4),
+            (x1 + text_width, y1),
+            (0, 255, 0),
+            -1,
+        )
 
-        # 绘制标签文本
-        cv2.putText(annotated_frame, label, (x1, y1 - 2), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 0), 1)
+        # Draw label text
+        cv2.putText(
+            annotated_frame,
+            label,
+            (x1, y1 - 2),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.5,
+            (0, 0, 0),
+            1,
+        )
 
     return annotated_frame
 
-def show_mask(mask, ax, obj_id=None, random_color=False):
-    if random_color:
-        color = np.concatenate([np.random.random(3), np.array([0.6])], axis=0)
-    else:
-        cmap = plt.get_cmap("tab10")
-        cmap_idx = 0 if obj_id is None else obj_id
-        color = np.array([*cmap(cmap_idx)[:3], 0.6])
-    h, w = mask.shape[-2:]
-    mask_image = mask.reshape(h, w, 1) * color.reshape(1, 1, -1)
-    ax.imshow(mask_image)
-
-def show_points(coords, labels, ax, marker_size=200):
-    pos_points = coords[labels == 1]
-    neg_points = coords[labels == 0]
-    ax.scatter(pos_points[:, 0], pos_points[:, 1], color='green', marker='*', s=marker_size, edgecolor='white',
-               linewidth=1.25)
-    ax.scatter(neg_points[:, 0], neg_points[:, 1], color='red', marker='*', s=marker_size, edgecolor='white',
-               linewidth=1.25)
 
 def video2jpg(video_path, output_folder, sample_freq=1):
     os.makedirs(output_folder, exist_ok=True)
 
-    # open video file
     cap = cv2.VideoCapture(video_path)
 
-    # check if the video is successfully opened
     if not cap.isOpened():
         print("Error: Could not open video.")
     else:
@@ -212,8 +224,7 @@ def video2jpg(video_path, output_folder, sample_freq=1):
             if not ret:
                 break
 
-            # 保存当前帧为jpg文件
-            if (frame_index % sample_freq == 0):
+            if frame_index % sample_freq == 0:
                 frame_filename = os.path.join(output_folder, f"{save_index:04d}.jpg")
                 cv2.imwrite(frame_filename, frame)
                 save_index += 1
@@ -223,27 +234,31 @@ def video2jpg(video_path, output_folder, sample_freq=1):
         cap.release()
         print(f"All frames have been saved to {output_folder}.")
 
-'========================================================='
 
 color_list = {
-    0: np.array([255, 0, 0]),      # 红色
-    1: np.array([0, 255, 0]),      # 绿色
-    2: np.array([0, 0, 255]),      # 蓝色
-    3: np.array([0, 125, 125]),    # 青绿色
-    4: np.array([125, 0, 125]),    # 紫色
-    5: np.array([125, 125, 0]),    # 黄色
-    6: np.array([255, 165, 0]),    # 橙色
-    7: np.array([255, 105, 180])   # 粉红色
+    0: np.array([255, 0, 0]),       # Red
+    1: np.array([0, 255, 0]),       # Green
+    2: np.array([0, 0, 255]),       # Blue
+    3: np.array([0, 125, 125]),     # Teal
+    4: np.array([125, 0, 125]),     # Purple
+    5: np.array([125, 125, 0]),     # Yellow
+    6: np.array([255, 165, 0]),     # Orange
+    7: np.array([255, 105, 180]),   # Pink
 }
 
-def vis_add_mask(image, mask, color, alpha):
-    color = color_list[color]
-    mask = mask > 0.5
-    image[mask] = image[mask] * (1 - alpha) + color * alpha
-    return image.astype('uint8')
 
-def contour_painter(input_image, input_mask, mask_color=5, mask_alpha=0.7, contour_color=1, contour_width=3, ann_obj_id=None):
-    assert input_image.shape[:2] == input_mask.shape, 'different shape between image and mask'
+def contour_painter(
+    input_image,
+    input_mask,
+    mask_color=5,
+    mask_alpha=0.7,
+    contour_color=1,
+    contour_width=3,
+    ann_obj_id=None,
+):
+    assert (
+        input_image.shape[:2] == input_mask.shape
+    ), "Different shape between image and mask"
     # 0: background, 1: foreground
     mask = np.clip(input_mask, 0, 1).astype(np.uint8)
     contour_radius = (contour_width - 1) // 2
@@ -251,29 +266,41 @@ def contour_painter(input_image, input_mask, mask_color=5, mask_alpha=0.7, conto
     dist_transform_fore = cv2.distanceTransform(mask, cv2.DIST_L2, 3)
     dist_transform_back = cv2.distanceTransform(1 - mask, cv2.DIST_L2, 3)
     dist_map = dist_transform_fore - dist_transform_back
-    # ...:::!!!:::...
     contour_radius += 2
     contour_mask = np.abs(np.clip(dist_map, -contour_radius, contour_radius))
     contour_mask = contour_mask / np.max(contour_mask)
-    contour_mask[contour_mask > 0.5] = 1.
+    contour_mask[contour_mask > 0.5] = 1.0
 
-    # paint contour
-    painted_image = vis_add_mask(input_image.copy(), 1 - contour_mask, contour_color, 1)
+    # Paint contour
+    painted_image = input_image.copy()
+    color = color_list[contour_color]
+    mask = 1 - contour_mask
+    painted_image[mask.astype(bool)] = (
+        painted_image[mask.astype(bool)] * (1 - 1) + color * 1
+    ).astype("uint8")
 
-    # 找到 mask 的中心位置
+    # Find the center position of the mask
     moments = cv2.moments(mask)
-    # breakpoint()
-    if moments['m00'] != 0 and ann_obj_id is not None:
-        cX = int(moments['m10'] / moments['m00'])
-        cY = int(moments['m01'] / moments['m00'])
+    if moments["m00"] != 0 and ann_obj_id is not None:
+        cX = int(moments["m10"] / moments["m00"])
+        cY = int(moments["m01"] / moments["m00"])
 
         font = cv2.FONT_HERSHEY_SIMPLEX
         font_scale = 1.2
-        font_color = (0, 0, 0)  # 白色文字
+        font_color = (0, 0, 0)
         font_thickness = 3
-        cv2.putText(painted_image, str(ann_obj_id), (cX, cY), font, font_scale, font_color, font_thickness)
+        cv2.putText(
+            painted_image,
+            str(ann_obj_id),
+            (cX, cY),
+            font,
+            font_scale,
+            font_color,
+            font_thickness,
+        )
 
     return painted_image
+
 
 def write_video(frames, output_path, fps):
     if not frames:
@@ -282,14 +309,15 @@ def write_video(frames, output_path, fps):
 
     height, width, _ = frames[0].shape
 
-    fourcc = cv2.VideoWriter_fourcc(*'mp4v')  # 选择编码器
+    fourcc = cv2.VideoWriter_fourcc(*"mp4v")
     video_writer = cv2.VideoWriter(output_path, fourcc, fps, (width, height))
 
     for frame in frames:
         frame_bgr = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
         video_writer.write(frame_bgr)
-    print('write video success')
+    print("Video writing completed.")
     video_writer.release()
+
 
 def process_mask_signal(mask_add, mask_min):
     kernel_size = 3
@@ -309,7 +337,7 @@ def process_mask_signal(mask_add, mask_min):
         mask1 = np.array(mask_add[k])
         mask2 = np.array(mask_min[k])
 
-        # mid filter
+        # Median filter
         filtered_data1 = scipy.signal.medfilt(mask1, kernel_size=kernel_size)
         filtered_data2 = scipy.signal.medfilt(mask2, kernel_size=kernel_size)
 
@@ -321,8 +349,8 @@ def process_mask_signal(mask_add, mask_min):
         min_num = min(min_num, min(filtered_mask_add[k]))
         min_num = min(min_num, min(filtered_mask_min[k]))
 
-        axes[index].plot(filtered_data1, linestyle='-', color='b')
-        axes[index + 1].plot(filtered_data2, linestyle='-', color='b')
+        axes[index].plot(filtered_data1, linestyle="-", color="b")
+        axes[index + 1].plot(filtered_data2, linestyle="-", color="b")
         index += 2
 
     plt.show()
@@ -341,8 +369,8 @@ def process_mask_signal(mask_add, mask_min):
         filtered_mask_add[k] = sigmoid(filtered_mask_add[k] * 5)
         filtered_mask_min[k] = sigmoid(filtered_mask_min[k] * 5)
 
-        axes[index].plot(filtered_mask_add[k], linestyle='-', color='b')
-        axes[index + 1].plot(filtered_mask_min[k], linestyle='-', color='b')
+        axes[index].plot(filtered_mask_add[k], linestyle="-", color="b")
+        axes[index + 1].plot(filtered_mask_min[k], linestyle="-", color="b")
         index += 2
 
     plt.show()
@@ -355,77 +383,32 @@ def process_mask_signal(mask_add, mask_min):
     for k in filtered_mask_add.keys():
         final_result[k] = filtered_mask_add[k] * filtered_mask_min[k]
 
-        axes[index].plot(final_result[k], linestyle='-', color='b')
+        axes[index].plot(final_result[k], linestyle="-", color="b")
         index += 1
 
     plt.show()
 
-def generate_dynamic_plots(mask_add, mask_min, num_frames):
-    frames = []
-    fig, axs = plt.subplots(len(mask_add) * 2, 1, figsize=(6, 12))
-    for frame_index in tqdm(range(num_frames)):
-        for index, k in enumerate(mask_add.keys()):
-            axs[index * 2].clear()
-            axs[index * 2].plot(mask_add[k], label=f'{k} add')
-            axs[index * 2].axvline(x=frame_index, color='r')  # 动态位置
-
-            axs[index * 2 + 1].clear()
-            axs[index * 2 + 1].plot(mask_min[k], label=f'{k} min')
-            axs[index * 2 + 1].axvline(x=frame_index, color='r')  # 动态位置
-
-        # plt.tight_layout()
-        fig.canvas.draw()
-
-        # 转换成图像
-        plot_image = np.frombuffer(fig.canvas.tostring_rgb(), dtype=np.uint8)
-        plot_image = plot_image.reshape(fig.canvas.get_width_height()[::-1] + (3,))
-
-        frames.append(plot_image)
-
-    plt.close(fig)
-    return frames
-
-def write_video_with_plot(video_frames, plot_frames, output_path, fps):
-    if not video_frames or not plot_frames:
-        print("Error: No frames to write.")
-        return
-
-    height, width, _ = video_frames[0].shape
-    plot_height, plot_width, _ = plot_frames[0].shape
-    total_width = width + plot_width
-
-    max_height = max(height, plot_height)
-
-    fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-    video_writer = cv2.VideoWriter(output_path, fourcc, fps, (total_width, max_height))
-
-    for video_frame, plot_frame in zip(video_frames, plot_frames):
-        combined_frame = np.zeros((max_height, total_width, 3), dtype=np.uint8)
-        combined_frame[:height, :width, :] = cv2.cvtColor(video_frame, cv2.COLOR_RGB2BGR)
-        combined_frame[:plot_height, width:, :] = plot_frame[:plot_height, :, :]
-
-        video_writer.write(combined_frame)
-    print('Write video success')
-    video_writer.release()
 
 def main(input_video_path, output_video_path, key_frames, bbx_file):
-    #First Part: get object list from first key_frame using VLM
+    # First Part: Get object list from first key_frame using VLM
     client = OpenAI(api_key=projectkey)
 
     ckpt_repo_id = "ShilongLiu/GroundingDINO"
     ckpt_filenmae = "groundingdino_swinb_cogcoor.pth"
     ckpt_config_filename = "GroundingDINO_SwinB.cfg.py"
 
-    groundingdino_model = load_model_hf(ckpt_repo_id, ckpt_filenmae, ckpt_config_filename)
+    groundingdino_model = load_model_hf(
+        ckpt_repo_id, ckpt_filenmae, ckpt_config_filename
+    )
 
-    DEVICE = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
+    DEVICE = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
-    sam_checkpoint = 'sam_vit_h_4b8939.pth'
+    sam_checkpoint = "sam_vit_h_4b8939.pth"
     sam = build_sam(checkpoint=sam_checkpoint)
     sam.to(device=DEVICE)
     sam_predictor = SamPredictor(sam)
 
-    if DEVICE.type == 'cpu':
+    if DEVICE.type == "cpu":
         float_type = torch.float32
     else:
         float_type = torch.float16
@@ -435,35 +418,33 @@ def main(input_video_path, output_video_path, key_frames, bbx_file):
         torch_dtype=float_type,
     )
 
-    if DEVICE.type != 'cpu':
+    if DEVICE.type != "cpu":
         pipe = pipe.to("cuda")
 
-    # replace the path with your own video_path
     video_path = input_video_path
     sample_freq = 16
     output_video_path = output_video_path
 
-    frames =read_video(video_path)
+    frames = read_video(video_path)
 
     object_list_response = get_object_list(video_path, client)
 
     num, obj_list = extract_num_object(object_list_response)
     print(f"Generated prompt: {obj_list}")
-    
-    #Second Part: Use GroundedSAM2 to track the objects
-    #Parameters for GroundingDINO
+
+    # Second Part: Use GroundedSAM2 to track the objects
+    # Parameters for GroundingDINO
     BOX_TRESHOLD = 0.3
     TEXT_TRESHOLD = 0.25
     object_counts = Counter(obj_list)
-    
-    # image_source, image = load_image(local_image_path)
+
     image_source, image = load_image_from_array(frames[0])
 
     best_boxes = []
     best_phrases = []
     best_logits = []
 
-    # 遍历每个物体，选择置信度最高的box
+    # Iterate over each object and select the box with highest confidence
     for obj, count in object_counts.items():
         boxes, logits, phrases = predict(
             model=groundingdino_model,
@@ -471,36 +452,37 @@ def main(input_video_path, output_video_path, key_frames, bbx_file):
             caption=obj,
             box_threshold=BOX_TRESHOLD,
             text_threshold=TEXT_TRESHOLD,
-            device=DEVICE
+            device=DEVICE,
         )
 
         if boxes.shape[0] > 0:
-            # 取出与该物体在 obj_list 中出现次数一致的 bounding boxes
-            selected_count = min(count, boxes.shape[0])  # 如果返回的 boxes 少于物体出现的次数，取较小值
+            selected_count = min(
+                count, boxes.shape[0]
+            )  # If returned boxes are fewer than object count
             for i in range(selected_count):
-                best_boxes.append(boxes[i].unsqueeze(0))  # 保存每个 box
-                best_phrases.append(phrases[i])  # 对应的物体短语
-                best_logits.append(logits[i])  # 对应的logit
+                best_boxes.append(boxes[i].unsqueeze(0))
+                best_phrases.append(phrases[i])
+                best_logits.append(logits[i])
 
-    print(best_boxes)
-    print(best_logits)
-    print(best_phrases)
-
-    input("1")
-
-    # 将 best_boxes 列表转换为单个 tensor
     if best_boxes:
-        best_boxes = torch.cat(best_boxes)  # 合并成一个张量
-        best_logits = torch.stack(best_logits)  # 将 logits 也合并为张量
+        best_boxes = torch.cat(best_boxes)
+        best_logits = torch.stack(best_logits)
 
-    annotated_frame = my_annotate(image_source=image_source, boxes=best_boxes, logits=best_logits, phrases=best_phrases)
+    annotated_frame = my_annotate(
+        image_source=image_source,
+        boxes=best_boxes,
+        logits=best_logits,
+        phrases=best_phrases,
+    )
     annotated_frame = annotated_frame[..., ::-1]  # BGR to RGB
 
     sam_predictor.set_image(image_source)
     H, W, _ = image_source.shape
     boxes_xyxy = box_ops.box_cxcywh_to_xyxy(best_boxes) * torch.Tensor([W, H, W, H])
 
-    transformed_boxes = sam_predictor.transform.apply_boxes_torch(boxes_xyxy, image_source.shape[:2]).to(DEVICE)
+    transformed_boxes = sam_predictor.transform.apply_boxes_torch(
+        boxes_xyxy, image_source.shape[:2]
+    ).to(DEVICE)
     masks, _, _ = sam_predictor.predict_torch(
         point_coords=None,
         point_labels=None,
@@ -515,12 +497,10 @@ def main(input_video_path, output_video_path, key_frames, bbx_file):
     pixel_cnt = h * w
     indices_to_keep = np.ones(len(masks_np), dtype=bool)
     for i in range(len(masks_np)):
-        # print(np.sum(masks_np[i][0]), pixel_cnt)
-        if (np.sum(masks_np[i][0]) > pixel_cnt * 0.3):
+        if np.sum(masks_np[i][0]) > pixel_cnt * 0.3:
             indices_to_keep[i] = False
     masks_np = masks_np[indices_to_keep]
 
-    # input('----------------------')
     del groundingdino_model
     del sam
     del sam_predictor
@@ -529,29 +509,32 @@ def main(input_video_path, output_video_path, key_frames, bbx_file):
     torch.cuda.empty_cache()
     gc.collect()
 
-    # use bfloat16 for the entire notebook
+    # Use bfloat16 for the entire notebook
     torch.autocast(device_type="cuda", dtype=torch.bfloat16).__enter__()
 
     if torch.cuda.get_device_properties(0).major >= 8:
-        # turn on tfloat32 for Ampere GPUs (https://pytorch.org/docs/stable/notes/cuda.html#tensorfloat-32-tf32-on-ampere-devices)
         torch.backends.cuda.matmul.allow_tf32 = True
         torch.backends.cudnn.allow_tf32 = True
 
     sam2_checkpoint = "segment-anything-2/checkpoints/sam2_hiera_large.pt"
     model_cfg = "sam2_hiera_l.yaml"
 
-    predictor = build_sam2_video_predictor(model_cfg, sam2_checkpoint, device='cuda:0')
+    predictor = build_sam2_video_predictor(
+        model_cfg, sam2_checkpoint, device="cuda:0"
+    )
 
-    '=================== First Round for sampling ==================='
-
-    video_dir = os.path.dirname(video_path) + f'/sample_freq_{sample_freq}_' + video_path.split('/')[-1].split('.')[0]
+    # First Round for sampling
+    video_dir = (
+        os.path.dirname(video_path)
+        + f"/sample_freq_{sample_freq}_"
+        + video_path.split("/")[-1].split(".")[0]
+    )
     if not os.path.exists(video_dir):
         video2jpg(video_path, video_dir, sample_freq)
 
-    # input('-------------------')
-    # scan all the JPEG frame names in this directory
     frame_names = [
-        p for p in os.listdir(video_dir)
+        p
+        for p in os.listdir(video_dir)
         if os.path.splitext(p)[-1] in [".jpg", ".jpeg", ".JPG", ".JPEG"]
     ]
     frame_names.sort(key=lambda p: int(os.path.splitext(p)[0]))
@@ -559,46 +542,46 @@ def main(input_video_path, output_video_path, key_frames, bbx_file):
     inference_state = predictor.init_state(video_path=video_dir)
     predictor.reset_state(inference_state)
 
-    prompts = {}  # hold all the clicks we add for visualization
+    prompts = {}  # Hold all the clicks we add for visualization
 
-    ann_frame_idx = 0  # the frame index we interact with
-    ann_obj_id = 1  # give a unique id to each object we interact with (it can be any integers)
+    ann_frame_idx = 0  # The frame index we interact with
+    ann_obj_id = 1  # Give a unique id to each object we interact with
 
     for i in range(len(masks_np)):
         _, out_obj_ids, out_mask_logits = predictor.add_new_mask(
             inference_state=inference_state,
             frame_idx=ann_frame_idx,
             obj_id=i,
-            mask=masks_np[i][0]
+            mask=masks_np[i][0],
         )
 
-    # run propagation throughout the video and collect the results in a dict
-    video_segments = {}  # video_segments contains the per-frame segmentation results
-    for out_frame_idx, out_obj_ids, out_mask_logits in predictor.propagate_in_video(inference_state):
+    # Run propagation throughout the video and collect the results in a dict
+    video_segments = {}  # Contains the per-frame segmentation results
+    for (
+        out_frame_idx,
+        out_obj_ids,
+        out_mask_logits,
+    ) in predictor.propagate_in_video(inference_state):
         video_segments[out_frame_idx] = {
             out_obj_id: (out_mask_logits[i] > 0.0).cpu().numpy()
             for i, out_obj_id in enumerate(out_obj_ids)
         }
 
-    '========================================================='
-
-    '=================== Second Round for process whole video ==================='
+    # Second Round for processing whole video
     del inference_state
     del predictor
     torch.cuda.empty_cache()
     torch.cuda.set_device(1)
 
-    # predictor._reset_tracking_results(inference_state)
     predictor = build_sam2_video_predictor(model_cfg, sam2_checkpoint)
 
-    video_dir = os.path.dirname(video_path) + '/' + video_path.split('/')[-1].split('.')[0]
+    video_dir = os.path.dirname(video_path) + "/" + video_path.split("/")[-1].split(".")[0]
     if not os.path.exists(video_dir):
         video2jpg(video_path, video_dir, 1)
 
-    # input('-------------------')
-    # scan all the JPEG frame names in this directory
     frame_names = [
-        p for p in os.listdir(video_dir)
+        p
+        for p in os.listdir(video_dir)
         if os.path.splitext(p)[-1] in [".jpg", ".jpeg", ".JPG", ".JPEG"]
     ]
     frame_names.sort(key=lambda p: int(os.path.splitext(p)[0]))
@@ -606,10 +589,10 @@ def main(input_video_path, output_video_path, key_frames, bbx_file):
     inference_state = predictor.init_state(video_path=video_dir)
     predictor.reset_state(inference_state)
 
-    prompts = {}  # hold all the clicks we add for visualization
+    prompts = {}
 
-    ann_frame_idx = 0  # the frame index we interact with
-    ann_obj_id = 1  # give a unique id to each object we interact with (it can be any integers)
+    ann_frame_idx = 0
+    ann_obj_id = 1
 
     for frame_idx in range(0, len(frame_names), sample_freq):
         for k in video_segments[frame_idx // sample_freq].keys():
@@ -617,71 +600,69 @@ def main(input_video_path, output_video_path, key_frames, bbx_file):
                 inference_state=inference_state,
                 frame_idx=frame_idx,
                 obj_id=k,
-                mask=video_segments[frame_idx // sample_freq][k][0]
+                mask=video_segments[frame_idx // sample_freq][k][0],
             )
 
-    video_segments = {}  # video_segments contains the per-frame segmentation results
-    for out_frame_idx, out_obj_ids, out_mask_logits in predictor.propagate_in_video(inference_state):
+    video_segments = {}
+    for (
+        out_frame_idx,
+        out_obj_ids,
+        out_mask_logits,
+    ) in predictor.propagate_in_video(inference_state):
         video_segments[out_frame_idx] = {
             out_obj_id: (out_mask_logits[i] > 0.0).cpu().numpy()
             for i, out_obj_id in enumerate(out_obj_ids)
         }
-    
-    #Third Part: select the key frames and compute the center coordinates of masks of different objects
+
+    # Third Part: Select key frames and compute center coordinates of masks
     key_frame_coordinates = {}
-    # 遍历关键帧
     for frame_idx in key_frames:
         current_frame_coords = []
-        
-        # 如果该帧存在于video_segments中
+
         if frame_idx in video_segments:
             for obj_id, mask in video_segments[frame_idx].items():
-                mask_data = mask[0]  # 提取掩码数据，形状为(height, width)
-                mask_indices = np.argwhere(mask_data > 0)  # 提取掩码为1的索引（非零像素）
+                mask_data = mask[0]
+                mask_indices = np.argwhere(mask_data > 0)
 
                 if len(mask_indices) > 0:
-                    # 计算掩码的平均坐标
                     avg_y, avg_x = np.mean(mask_indices, axis=0)
-                    current_frame_coords.append(f"Object {obj_id}: ({int(avg_x)}, {int(avg_y)})")
+                    current_frame_coords.append(
+                        f"Object {obj_id}: ({int(avg_x)}, {int(avg_y)})"
+                    )
                 else:
-                    print(f"Warning: Empty mask for object {obj_id} in frame {frame_idx}")
-        
-        # 存储每个关键帧的结果
+                    print(
+                        f"Warning: Empty mask for object {obj_id} in frame {frame_idx}"
+                    )
+
         key_frame_coordinates[f"key_frame{frame_idx}"] = current_frame_coords
 
-
-    # 输出每个关键帧的物体坐标
     for key_frame, coordinates in key_frame_coordinates.items():
         print(f"{key_frame}: {coordinates}")
 
     output_file = bbx_file
 
-    # store the coordinates in an output file for further reference
-    with open(output_file, mode='a', newline='') as file:
+    # Store the coordinates in an output file
+    with open(output_file, mode="a", newline="") as file:
         writer = csv.writer(file)
 
-        # 初始化一个列表来存储拼接后的字符串
         all_coordinates = []
-
-        # 遍历每个关键帧的物体坐标，拼接字符串
         for key_frame, coordinates in key_frame_coordinates.items():
-            # 将key_frame和其对应的物体坐标拼接在一起
             coordinates_str = "\n".join(coordinates)
             all_coordinates.append(f"{key_frame}: {coordinates_str}")
 
-        # 将所有 key_frame: coordinates_str 拼接为一个完整的字符串
         final_coordinates_str = "\n".join(all_coordinates)
 
-        # 将 input_demo_name 和拼接后的内容写入CSV
         writer.writerow([input_video_path, final_coordinates_str])
 
-    #Fourth Part: append all the painted frames into a video
+    # Fourth Part: Append all the painted frames into a video
     painted_frames = []
     for i in range(len(frame_names)):
         img = cv2.imread(os.path.join(video_dir, frame_names[i]))
         img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
         for k in video_segments[i].keys():
-            img = contour_painter(img, video_segments[i][k][0], contour_color=1, ann_obj_id=k)
+            img = contour_painter(
+                img, video_segments[i][k][0], contour_color=1, ann_obj_id=k
+            )
         painted_frames.append(img)
 
     mask_add = {}
@@ -706,20 +687,20 @@ def main(input_video_path, output_video_path, key_frames, bbx_file):
 
             mask_add[k].append(add_cnt.item())
             mask_min[k].append(min_cnt.item())
-            
+
     process_mask_signal(mask_add, mask_min)
 
+
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Process video with SAM and GroundingDINO.")
-    parser.add_argument('--input', type=str, help='Path to the input video')
-    parser.add_argument('--output', type=str, help='Path to the output video')
-    parser.add_argument('--key_frames', nargs='+', type=int, help='List of key frame indices')
-    parser.add_argument('--bbx_file', type=str, help='Path to store coordinates of bounding boxes')
+    parser = argparse.ArgumentParser(
+        description="Process video with SAM and GroundingDINO."
+    )
+    parser.add_argument("--input", type=str, help="Path to the input video")
+    parser.add_argument("--output", type=str, help="Path to the output video")
+    parser.add_argument("--key_frames", nargs="+", type=int, help="List of key frame indices")
+    parser.add_argument("--bbx_file", type=str, help="Path to store coordinates of bounding boxes")
 
     args = parser.parse_args()
-
-    # 打印接收到的 key_frames 列表，检查是否正确传递
     print(f"Received key_frames: {args.key_frames}")
-    
-    # 调用 main 函数
+
     main(args.input, args.output, args.key_frames, args.bbx_file)

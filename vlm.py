@@ -1,706 +1,345 @@
-import os
-import sys
-import argparse
 import copy
-import gc
-import json
-import re
-import csv
+import numpy as np
+import cv2
+import shapely
+from shapely.geometry import *
+from shapely.affinity import *
+import matplotlib.pyplot as plt
+from openai import OpenAI
+from src.key import mykey, projectkey
+import sys
+from IPython.display import display, Image
 import base64
 from io import BytesIO
-from collections import Counter
-
-import numpy as np
-import torch
+import os
+import re
 from PIL import Image
-from torchvision.ops import box_convert
-from tqdm import tqdm
-import cv2
-import scipy.signal
-import matplotlib.pyplot as plt
-
-from openai import OpenAI
-from VLM_CaP.src.key import mykey, projectkey
-from diffusers import StableDiffusionInpaintPipeline
-from sam2.build_sam import build_sam2_video_predictor
-
-# Grounding DINO
-from GroundingDINO.groundingdino.models import build_model
-from GroundingDINO.groundingdino.util import box_ops
-from GroundingDINO.groundingdino.util.slconfig import SLConfig
-from GroundingDINO.groundingdino.util.utils import clean_state_dict
-from GroundingDINO.groundingdino.util.inference import (
-    annotate,
-    load_image,
-    predict,
-    load_image_from_array,
-)
-
-# Segment Anything
-from segment_anything import build_sam, SamPredictor
-
-# Hugging Face Hub
-from huggingface_hub import hf_hub_download
-
-sys.path.append(os.path.join(os.getcwd(), "GroundingDINO"))
-os.environ["CUDA_VISIBLE_DEVICES"] = "0,1"
-
-
-def image_to_base64(image):
-    buffered = BytesIO()
-    image.save(buffered, format="PNG")
-    img_str = base64.b64encode(buffered.getvalue()).decode("utf-8")
-    return img_str
-
-
-def call_openai_api(prompt_messages, client):
+from collections import Counter
+import argparse
+import csv
+import ffmpy
+import ast
+from src.vlm_video import extract_frame_list  # import extract_frames
+# set up your openai api key
+client = OpenAI(api_key=projectkey)
+# def for calling openai api with different prompts
+def call_openai_api(prompt_messages):
     params = {
         "model": "gpt-4o",
         "messages": prompt_messages,
         "max_tokens": 400,
-        "temperature": 0,
+        "temperature": 0
     }
     result = client.chat.completions.create(**params)
     return result.choices[0].message.content
-
-
-def get_object_list(video_path, client):
-    # Use the first frame for encoding
-    video = cv2.VideoCapture(video_path)
-
-    base64Frames = []
-    frame_count = 0
-    max_frames = 2  # Only process the first 2 frames
-
-    while video.isOpened() and frame_count < max_frames:
-        success, frame = video.read()
-        if not success:
-            break
-        _, buffer = cv2.imencode(".jpg", frame)
-        base64Frames.append(base64.b64encode(buffer).decode("utf-8"))
-        frame_count += 1
-
-    video.release()
-    print(len(base64Frames), "frames read.")
-
+                # "Notice that there might be similar objects. You are supposed to use the index annotated on the objects to distinguish between only similar objects that is hard to distinguish with language."
+def get_object_list(selected_frames):
+    # first prompt to get objects in the environment
     prompt_messages_state = [
         {
             "role": "system",
             "content": [
                 "You are a visual object detector. Your task is to count and identify the objects in the provided image that are on the desk. Focus on objects classified as grasped_objects and containers.",
-                "Do not include hand or gripper in your answer",
             ],
         },
         {
             "role": "user",
             "content": [
-                "There are two kinds of objects, grasped_objects and containers in the environment. We only care about objects on the desk.",
-                "You must strictly follow the rules below: Even if there are multiple objects that appear identical, you must repeat their names in your answer according to their quantity. For example, if there are three wooden blocks, you must mention 'wooden block' three times in your answer."
-                "Be careful and accurate with the number. Do not miss or add additional object in your answer."
+                "There are two kinds of objects, grasped_objects and containers in the environment. We only care about objects on the desk. Do not count in hand or person as objects.",
                 "Based on the input picture, answer:",
                 "1. How many objects are there in the environment?",
                 "2. What are these objects?",
                 "You should respond in the format of the following example:",
-                "Number: 3",
-                "Objects: red pepper, red tomato, white bowl",
-                "Number: 4",
-                "Objects: wooden block, wooden block, wooden block, wooden block",
-                *map(lambda x: {"image": x, "resize": 768}, base64Frames[0:1]),
+                "Number: 1",
+                "Objects: purple eggplant, red tomato, white bowl, white bowl",
+                *map(lambda x: {"image": x, "resize": 768}, selected_frames[0:1]),  # use first picture for environment objects
             ],
         },
     ]
-
-    response_state = call_openai_api(prompt_messages_state, client)
+    response_state = call_openai_api(prompt_messages_state)
     return response_state
-
-
 def extract_num_object(response_state):
-    # Extract number of objects
+    # extract number of objects
     num_match = re.search(r"Number: (\d+)", response_state)
     num = int(num_match.group(1)) if num_match else 0
-
-    # Extract objects
+    
+    # extract objects
     objects_match = re.search(r"Objects: (.+)", response_state)
     objects_list = objects_match.group(1).split(", ") if objects_match else []
-
-    # Construct object list
+    
+    # construct object list
     objects = [obj for obj in objects_list]
-
+    
     return num, objects
-
-
-def load_model_hf(repo_id, filename, ckpt_config_filename, device="cpu"):
-    cache_config_file = hf_hub_download(repo_id=repo_id, filename=ckpt_config_filename)
-
-    args = SLConfig.fromfile(cache_config_file)
-    model = build_model(args)
-    args.device = device
-
-    cache_file = hf_hub_download(repo_id=repo_id, filename=filename)
-    checkpoint = torch.load(cache_file, map_location="cpu")
-    log = model.load_state_dict(clean_state_dict(checkpoint["model"]), strict=False)
-    print("Model loaded from {} \n => {}".format(cache_file, log))
-    _ = model.eval()
-    return model
-
-
-def read_video(video_path):
-    video_capture = cv2.VideoCapture(video_path)
-
-    if not video_capture.isOpened():
-        print("Error: Could not open video.")
-        exit()
-
-    frames = []
-
-    while True:
-        ret, frame = video_capture.read()
-
+def extract_keywords_pick(response):
+    try:
+        return response.split(': ')[1]
+    except IndexError:
+        print("Error extracting pick keyword from response:", response)
+        return None
+def extract_keywords_drop(response):
+    try:
+        return response.split(': ')[1]
+    except IndexError:
+        print("Error extracting drop keyword from response:", response)
+        return None
+def extract_keywords_reference(response):
+    try:
+        return response.split(': ')[1]
+    except IndexError:
+        print("Error extracting reference object from response:", response)
+        return None
+def is_frame_relevant(response):
+    return "hand is manipulating an object" in response.lower()
+def parse_closest_object_and_relationship(response):
+    pattern = r"Closest Object: ([^,]+), (.+)"
+    match = re.search(pattern, response)
+    if match:
+        return match.group(1), match.group(2)
+    print("Error parsing reference object and relationship from response:", response)
+    return None, None
+def process_images(selected_frames, obj_list):
+    string_cache = ""  # cache for CaP operations
+    i = 1
+    while i < len(selected_frames):
+        input_frame_pick = selected_frames[i:i+1]
+        prompt_messages_relevance_pick = [
+            {
+                "role": "system",
+                "content": [
+                    "You are an operations inspector. You need to check whether the hand in operation is holding an object. The objects have been outlined with contours of different colors and labeled with indexes for easier distinction."
+                ],
+            },
+            {
+                "role": "user",
+                "content": [
+                    "This is a picture from a pick-and-drop task. Please determine if the hand is manipulating an object.", 
+                    "Respond with 'Hand is manipulating an object' or 'Hand is not manipulating an object'.",
+                    *map(lambda x: {"image": x, "resize": 768}, input_frame_pick),
+                ],
+            },
+        ]
+        response_relevance_pick = call_openai_api(prompt_messages_relevance_pick)
+        print(response_relevance_pick)
+        if not is_frame_relevant(response_relevance_pick):
+            i += 1
+            continue
+        # which to pick
+        prompt_messages_pick = [
+            {
+                "role": "system",
+                "content": [
+                    "You are an operation inspector. You need to check which object is being picked in a pick-and-drop task. Some of the objects have been outlined with contours of different colors and labeled with indexes for easier distinction.",
+                    "The contour and index is only used to help. Due to limitation of vision models, the contours and index labels might not cover every objects in the environment. If you notice any unannotated objects in the demo or in the object list, make sure you name it and handle them properly.",
+                ],
+            },
+            {
+                "role": "user",
+                "content": [
+                    f"This is a picture describing the pick state of a pick-and-drop task. The objects in the environment are {obj_list}. One of the objects is being picked by a human hand or robot gripper now. The objects have been outlined with contours of different colors and labeled with indexes for easier distinction.",
+                    "Based on the input picture and object list, answer:",
+                    "1. Which object is being picked",
+                    "You should respond in the format of the following example:",
+                    "Object Picked: red block",
+                    *map(lambda x: {"image": x, "resize": 768}, input_frame_pick),
+                ],
+            },
+        ]
+        response_pick = call_openai_api(prompt_messages_pick)
+        print(response_pick)
+        object_picked = extract_keywords_pick(response_pick)
+        i += 1
+        # Ensure there is another frame for drop and relative position reasoning
+        if i >= len(selected_frames):
+            break
+        # Check if the second frame (i) is relevant (i.e., hand is holding an object)
+        input_frame_drop = selected_frames[i:i+1]
+        # reference object 
+        prompt_messages_reference = [
+            {
+                "role": "system",
+                "content": [
+                    "You are an operation inspector. You need to find the reference object for the placement location of the picked object in the pick-and-place process. Notice that the reference object can vary based on the task. If this is a storage task, the reference object should be the container into which the items are stored. If this is a stacking task, the reference object should be the object that best expresses the orientation of the arrangement."
+                ],
+            },
+            {
+                "role": "user",
+                "content": [
+                    f"This is a picture describing the drop state of a pick-and-place task. The objects in the environment are {obj_list}. {object_picked} is being dropped by a human hand or robot gripper now.",
+                    "Based on the input picture and object list, answer:",
+                    f"1. Which object in the rest of object list do you choose as a reference object to {object_picked}",
+                    "You should respond in the format of the following example without any additional information or reason steps:",
+                    "Reference Object: red block",
+                    *map(lambda x: {"image": x, "resize": 768}, input_frame_drop),
+                ],
+            },
+        ]
+        response_reference = call_openai_api(prompt_messages_reference)
+        print(response_reference)
+        object_reference = extract_keywords_reference(response_reference)
+        # current_bbx = bbx_list[i] if i < len(bbx_list) else {}
+        
+                    # "Due to limitation of vision models, the contours and index labels might not cover every objects in the environment. If you notice any unannotated objects in the demo or in the object list, make sure you handle them properly.",
+        prompt_messages_relationship = [
+            {
+                "role": "system",
+                "content": [
+                    "You are a VLMTutor. You will describe the drop state of a pick-and-drop task from a demo picture. You must pay specific attention to the spatial relationship between picked object and reference object in the picture and be correct and accurate with directions.",
+                ],
+            },
+            {
+                "role": "user",
+                "content": [
+                    f"This is a picture describing the drop state of a pick-and-drop task. The objects in the environment are object list: {obj_list}. {object_picked} is said to be being dropped by a human hand or robot gripper now.",
+                    f"However, the object being dropped might be wrong due to bad visual prompt. If you feel that object being picked is not {object_picked} but some other object, red chili is said to be the object picked but you feel it is an orange carrot, you MUST modify it and change the name!"
+                    # "But notice that due to limitation of vision models, the contours and index labels might not cover every objects in the environment. If you notice any unannotated objects in the demo or in the object list, make sure you mention their name and handle their spatial relationships."
+                    # "The ID is only used to help with your reasoning. You should only mention them when the objects are the same in language description. For example, when there are two white bowls, you must specify white bowl (ID:1), white bowl (ID:2) in your answer. But for different objects like vegetables, you do not need to specify their IDs."
+                    # f"To help you better understand the spatial relationship, a bounding box list is given to you. Notice that the bounding boxes of objects in the bounding box list are distinguished by labels. These labels correspond one-to-one with the labels of the objects in the image. The bounding box list is: {bbx_list}",
+                    # "The coordinates of the bounding box represent the center point of the object. The format is two coordinates (x,y). The origin of the coordinates is at the top-left corner of the image. If there are two objects A(x1, y1) and B(x2, y2), a significantly smaller x2 compared to x1 indicates that B is to the left of A; a significantly greater x2 compared to x1 indicates that B is to the right of A; a significantly smaller y2 compared to y1 indicates that B is at the back of A;  a significantly greater y2 compared to y1 indicates that B is in front of A."
+                    # "Pay attention to distinguish between at the back of and on top of. If B and A has a visual gap, they are not in touch. Thus B is at the back of A. However, if they are very close, this means B and A are in contact, thus B is on top of A."
+                    # "Notice that the largest difference in corresponding coordinates often represents the most significant feature. If you have coordinates with small difference in x but large difference in y, then coordinates y will represent most significant feature. Make sure to use the picture together with coordinates."
+                    f"The object picked is being dropped somewhere near {object_reference}. Based on the input picture, object list answer:",
+                    f"Drop object picked to which relative position to the {object_reference}? You need to mention the name of objects in your answer.",
+                    f"There are totally six kinds of relative position, and the direction means the visual direction of the picture.",
+                    f"1. In ((object picked is contained in the {object_reference})",
+                    f"2. On top of (object picked is stacked on the {object_reference}, {object_reference} supports object picked)",
+                    f"3. At the back of (in demo it means object picked is positioned farther to the viewer relative to the {object_reference})",
+                    f"4. In front of (in demo it means object picked is positioned closer to the viewer or relative to the {object_reference})",
+                    "5. to the left",
+                    "6. to the right",
+                    f"You must choose one relative position."
+                    "You should respond in the format of the following example without any additional information or reason steps, be sure to mention the object picked and reference object.",
+                    f"Drop yellow corn to the left of the red chili",
+                    f"Drop red chili in the white bowl",
+                    f"Drop wooden block (ID:1) to the right of the wooden block (ID:0)",
+                    *map(lambda x: {"image": x, "resize": 768}, input_frame_drop),
+                ],
+            },
+        ]
+        response_relationship = call_openai_api(prompt_messages_relationship)
+        print(response_relationship)
+        string_cache += response_relationship + " and then "
+        
+        i += 1
+        
+    return string_cache
+def save_results_to_csv(demo_name, num, obj_list, string_cache, output_file):
+    """
+    将结果保存到指定的 CSV 文件中，追加模式不会覆盖之前的内容。
+    如果文件不存在，则创建并写入标题行。
+    """
+    file_exists = os.path.exists(output_file)
+    with open(output_file, mode='a', newline='') as file:
+        writer = csv.writer(file)
+        # 如果文件不存在，则写入标题行
+        if not file_exists:
+            writer.writerow(["demo", "object", "action list"])
+        
+        # 写入数据
+        writer.writerow([f"{demo_name}", f"{num} objects: {', '.join(obj_list)}", string_cache])
+    print(f"Results appended to {output_file}")
+def convert_video_to_mp4(input_path):
+    """
+    Converts the input video file to H.264 encoded .mp4 format using ffmpy.
+    The output path will be the same as the input path with '_converted' appended before the extension.
+    """
+    # Get the file name without extension and append '_converted'
+    base_name, ext = os.path.splitext(input_path)
+    output_path = f"{base_name}_converted.mp4"
+    # Run FFmpeg command to convert the video
+    ff = ffmpy.FFmpeg(
+        inputs={input_path: None},
+        outputs={output_path: '-c:v libx264 -crf 23 -preset fast -r 30'}
+    )
+    ff.run()
+    print(f"Video converted successfully: {output_path}")
+    return output_path
+def extract_bbx_list_from_csv(csv_file, input_video_path):
+    """
+    根据输入的视频路径，从CSV文件中提取对应的bbx列表，并按key_frame的index排序。
+    """
+    with open(csv_file, mode='r') as file:
+        reader = csv.DictReader(file)
+        for row in reader:
+            # 这里可以确保 input_video_path 与 row['demo'] 是否完全匹配
+            if row['demo'] == input_video_path:
+                # 提取bbx列，并按照key_frame的index排序
+                bbx_info = row['bbx_list']
+                # 提取出关键帧信息，格式为 key_frame<number>: <bounding_box_data>
+                key_frame_data = re.findall(r'key_frame(\d+): (.+)', bbx_info)
+                # 按关键帧 index 排序
+                sorted_bbx_list = sorted(key_frame_data, key=lambda x: int(x[0]))
+                # 处理排序后的信息并转换为 {index: bounding_box} 的形式
+                bbx_list = []
+                for _, objects in sorted_bbx_list:
+                    # 匹配 Object 的 bounding box 数据，假设 x 和 y 是整数
+                    object_bbx = re.findall(r'Object (\d+): \((\d+), (\d+)\)', objects)
+                    # 如果需要支持浮点数，可以将 (\d+) 改为 ([\d.]+)
+                    bbx_list.append({int(obj_index): (int(x), int(y)) for obj_index, x, y in object_bbx})
+                return bbx_list  # 返回处理后的 bbx_list
+    # 如果没有找到对应的 demo，返回 None
+    return None
+def main(input_video_path, frame_index_list, demo_name, csv_file):
+    # 如果 frame_index_list 是字符串，使用 ast.literal_eval 将其转换为列表
+    # 现在转换为整数列表
+    frame_index_list = ast.literal_eval(frame_index_list)
+    # 从csv_file中提取与input_video_path对应的bbx_list
+    # bbx_list = extract_bbx_list_from_csv(csv_file, input_video_path)
+    # if not bbx_list:
+    #     print(f"No matching bbx list found for {input_video_path}")
+    #     return
+    # video path
+    video_path = input_video_path
+    # list to store key frames
+    selected_raw_frames1 = []
+    # list to store key frame indexes
+    selected_frame_index = frame_index_list
+    # Convert the video to H.264 encoded .mp4 format
+    # converted_video_path = convert_video_to_mp4(video_path)
+    # Open the converted video
+    cap = cv2.VideoCapture(video_path)
+    # Manually calculate total number of frames
+    actual_frame_count = 0
+    while cap.isOpened():
+        ret, frame = cap.read()
         if not ret:
             break
-
-        frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-        frames.append(frame)
-    return frames
-
-
-def my_annotate(
-    image_source: np.ndarray,
-    boxes: torch.Tensor,
-    logits: torch.Tensor,
-    phrases,
-) -> np.ndarray:
-    h, w, _ = image_source.shape
-    boxes = boxes * torch.Tensor([w, h, w, h])
-    xyxy = box_convert(boxes=boxes, in_fmt="cxcywh", out_fmt="xyxy").numpy()
-
-    annotated_frame = cv2.cvtColor(image_source, cv2.COLOR_RGB2BGR)
-
-    for box, logit, phrase in zip(xyxy, logits, phrases):
-        x1, y1, x2, y2 = map(int, box)
-        label = f"{phrase} {logit:.2f}"
-
-        # Draw bounding box
-        cv2.rectangle(annotated_frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
-
-        # Draw label background box
-        (text_width, text_height), _ = cv2.getTextSize(
-            label, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 1
-        )
-        cv2.rectangle(
-            annotated_frame,
-            (x1, y1 - text_height - 4),
-            (x1 + text_width, y1),
-            (0, 255, 0),
-            -1,
-        )
-
-        # Draw label text
-        cv2.putText(
-            annotated_frame,
-            label,
-            (x1, y1 - 2),
-            cv2.FONT_HERSHEY_SIMPLEX,
-            0.5,
-            (0, 0, 0),
-            1,
-        )
-
-    return annotated_frame
-
-
-def video2jpg(video_path, output_folder, sample_freq=1):
-    os.makedirs(output_folder, exist_ok=True)
-
-    cap = cv2.VideoCapture(video_path)
-
-    if not cap.isOpened():
-        print("Error: Could not open video.")
-    else:
-        frame_index = 0
-        save_index = 0
-        while True:
-            ret, frame = cap.read()
-            if not ret:
-                break
-
-            if frame_index % sample_freq == 0:
-                frame_filename = os.path.join(output_folder, f"{save_index:04d}.jpg")
-                cv2.imwrite(frame_filename, frame)
-                save_index += 1
-
-            frame_index += 1
-
-        cap.release()
-        print(f"All frames have been saved to {output_folder}.")
-
-
-color_list = {
-    0: np.array([255, 0, 0]),       # Red
-    1: np.array([0, 255, 0]),       # Green
-    2: np.array([0, 0, 255]),       # Blue
-    3: np.array([0, 125, 125]),     # Teal
-    4: np.array([125, 0, 125]),     # Purple
-    5: np.array([125, 125, 0]),     # Yellow
-    6: np.array([255, 165, 0]),     # Orange
-    7: np.array([255, 105, 180]),   # Pink
-}
-
-
-def contour_painter(
-    input_image,
-    input_mask,
-    mask_color=5,
-    mask_alpha=0.7,
-    contour_color=1,
-    contour_width=3,
-    ann_obj_id=None,
-):
-    assert (
-        input_image.shape[:2] == input_mask.shape
-    ), "Different shape between image and mask"
-    # 0: background, 1: foreground
-    mask = np.clip(input_mask, 0, 1).astype(np.uint8)
-    contour_radius = (contour_width - 1) // 2
-
-    dist_transform_fore = cv2.distanceTransform(mask, cv2.DIST_L2, 3)
-    dist_transform_back = cv2.distanceTransform(1 - mask, cv2.DIST_L2, 3)
-    dist_map = dist_transform_fore - dist_transform_back
-    contour_radius += 2
-    contour_mask = np.abs(np.clip(dist_map, -contour_radius, contour_radius))
-    contour_mask = contour_mask / np.max(contour_mask)
-    contour_mask[contour_mask > 0.5] = 1.0
-
-    # Paint contour
-    painted_image = input_image.copy()
-    color = color_list[contour_color]
-    mask = 1 - contour_mask
-    painted_image[mask.astype(bool)] = (
-        painted_image[mask.astype(bool)] * (1 - 1) + color * 1
-    ).astype("uint8")
-
-    # Find the center position of the mask
-    moments = cv2.moments(mask)
-    if moments["m00"] != 0 and ann_obj_id is not None:
-        cX = int(moments["m10"] / moments["m00"])
-        cY = int(moments["m01"] / moments["m00"])
-
-        font = cv2.FONT_HERSHEY_SIMPLEX
-        font_scale = 1.2
-        font_color = (0, 0, 0)
-        font_thickness = 3
-        cv2.putText(
-            painted_image,
-            str(ann_obj_id),
-            (cX, cY),
-            font,
-            font_scale,
-            font_color,
-            font_thickness,
-        )
-
-    return painted_image
-
-
-def write_video(frames, output_path, fps):
-    if not frames:
-        print("Error: No frames to write.")
-        return
-
-    height, width, _ = frames[0].shape
-
-    fourcc = cv2.VideoWriter_fourcc(*"mp4v")
-    video_writer = cv2.VideoWriter(output_path, fourcc, fps, (width, height))
-
-    for frame in frames:
-        frame_bgr = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
-        video_writer.write(frame_bgr)
-    print("Video writing completed.")
-    video_writer.release()
-
-
-def process_mask_signal(mask_add, mask_min):
-    kernel_size = 3
-
-    n = len(mask_add)
-
-    fig, axes = plt.subplots(n * 2, 1, figsize=(10, 5 * n * 2), sharex=True, sharey=True)
-    axes = axes.flatten()
-
-    filtered_mask_add = {}
-    filtered_mask_min = {}
-    min_num = 99999
-    max_num = 0
-
-    index = 0
-    for k in mask_add.keys():
-        mask1 = np.array(mask_add[k])
-        mask2 = np.array(mask_min[k])
-
-        # Median filter
-        filtered_data1 = scipy.signal.medfilt(mask1, kernel_size=kernel_size)
-        filtered_data2 = scipy.signal.medfilt(mask2, kernel_size=kernel_size)
-
-        filtered_mask_add[k] = filtered_data1
-        filtered_mask_min[k] = filtered_data2
-
-        max_num = max(max_num, max(filtered_mask_add[k]))
-        max_num = max(max_num, max(filtered_mask_min[k]))
-        min_num = min(min_num, min(filtered_mask_add[k]))
-        min_num = min(min_num, min(filtered_mask_min[k]))
-
-        axes[index].plot(filtered_data1, linestyle="-", color="b")
-        axes[index + 1].plot(filtered_data2, linestyle="-", color="b")
-        index += 2
-
-    plt.show()
-
-    def sigmoid(x):
-        return 1 / (1 + np.exp(-x))
-
-    fig, axes = plt.subplots(n * 2, 1, figsize=(10, 5 * n * 2), sharex=True, sharey=True)
-    axes = axes.flatten()
-    index = 0
-
-    for k in filtered_mask_add.keys():
-        filtered_mask_add[k] = ((filtered_mask_add[k] - min_num) / max_num) * 2 - 1
-        filtered_mask_min[k] = ((filtered_mask_min[k] - min_num) / max_num) * 2 - 1
-
-        filtered_mask_add[k] = sigmoid(filtered_mask_add[k] * 5)
-        filtered_mask_min[k] = sigmoid(filtered_mask_min[k] * 5)
-
-        axes[index].plot(filtered_mask_add[k], linestyle="-", color="b")
-        axes[index + 1].plot(filtered_mask_min[k], linestyle="-", color="b")
-        index += 2
-
-    plt.show()
-
-    fig, axes = plt.subplots(n, 1, figsize=(10, 5 * n), sharex=True, sharey=True)
-    axes = axes.flatten()
-    index = 0
-
-    final_result = {}
-    for k in filtered_mask_add.keys():
-        final_result[k] = filtered_mask_add[k] * filtered_mask_min[k]
-
-        axes[index].plot(final_result[k], linestyle="-", color="b")
-        index += 1
-
-    plt.show()
-
-
-def main(input_video_path, output_video_path, key_frames, bbx_file):
-    # First Part: Get object list from first key_frame using VLM
-    client = OpenAI(api_key=projectkey)
-
-    ckpt_repo_id = "ShilongLiu/GroundingDINO"
-    ckpt_filenmae = "groundingdino_swinb_cogcoor.pth"
-    ckpt_config_filename = "GroundingDINO_SwinB.cfg.py"
-
-    groundingdino_model = load_model_hf(
-        ckpt_repo_id, ckpt_filenmae, ckpt_config_filename
-    )
-
-    DEVICE = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-
-    sam_checkpoint = "sam_vit_h_4b8939.pth"
-    sam = build_sam(checkpoint=sam_checkpoint)
-    sam.to(device=DEVICE)
-    sam_predictor = SamPredictor(sam)
-
-    if DEVICE.type == "cpu":
-        float_type = torch.float32
-    else:
-        float_type = torch.float16
-
-    pipe = StableDiffusionInpaintPipeline.from_pretrained(
-        "stabilityai/stable-diffusion-2-inpainting",
-        torch_dtype=float_type,
-    )
-
-    if DEVICE.type != "cpu":
-        pipe = pipe.to("cuda")
-
-    video_path = input_video_path
-    sample_freq = 16
-    output_video_path = output_video_path
-
-    frames = read_video(video_path)
-
-    object_list_response = get_object_list(video_path, client)
-
-    num, obj_list = extract_num_object(object_list_response)
-    print(f"Generated prompt: {obj_list}")
-
-    # Second Part: Use GroundedSAM2 to track the objects
-    # Parameters for GroundingDINO
-    BOX_TRESHOLD = 0.3
-    TEXT_TRESHOLD = 0.25
-    object_counts = Counter(obj_list)
-
-    image_source, image = load_image_from_array(frames[0])
-
-    best_boxes = []
-    best_phrases = []
-    best_logits = []
-
-    # Iterate over each object and select the box with highest confidence
-    for obj, count in object_counts.items():
-        boxes, logits, phrases = predict(
-            model=groundingdino_model,
-            image=image,
-            caption=obj,
-            box_threshold=BOX_TRESHOLD,
-            text_threshold=TEXT_TRESHOLD,
-            device=DEVICE,
-        )
-
-        if boxes.shape[0] > 0:
-            selected_count = min(
-                count, boxes.shape[0]
-            )  # If returned boxes are fewer than object count
-            for i in range(selected_count):
-                best_boxes.append(boxes[i].unsqueeze(0))
-                best_phrases.append(phrases[i])
-                best_logits.append(logits[i])
-
-    if best_boxes:
-        best_boxes = torch.cat(best_boxes)
-        best_logits = torch.stack(best_logits)
-
-    annotated_frame = my_annotate(
-        image_source=image_source,
-        boxes=best_boxes,
-        logits=best_logits,
-        phrases=best_phrases,
-    )
-    annotated_frame = annotated_frame[..., ::-1]  # BGR to RGB
-
-    sam_predictor.set_image(image_source)
-    H, W, _ = image_source.shape
-    boxes_xyxy = box_ops.box_cxcywh_to_xyxy(best_boxes) * torch.Tensor([W, H, W, H])
-
-    transformed_boxes = sam_predictor.transform.apply_boxes_torch(
-        boxes_xyxy, image_source.shape[:2]
-    ).to(DEVICE)
-    masks, _, _ = sam_predictor.predict_torch(
-        point_coords=None,
-        point_labels=None,
-        boxes=transformed_boxes,
-        multimask_output=False,
-    )
-
-    masks = masks.cpu()
-    masks_np = masks.numpy()
-
-    h, w = masks_np[0][0].shape
-    pixel_cnt = h * w
-    indices_to_keep = np.ones(len(masks_np), dtype=bool)
-    for i in range(len(masks_np)):
-        if np.sum(masks_np[i][0]) > pixel_cnt * 0.3:
-            indices_to_keep[i] = False
-    masks_np = masks_np[indices_to_keep]
-
-    del groundingdino_model
-    del sam
-    del sam_predictor
-    del pipe
-
-    torch.cuda.empty_cache()
-    gc.collect()
-
-    # Use bfloat16 for the entire notebook
-    torch.autocast(device_type="cuda", dtype=torch.bfloat16).__enter__()
-
-    if torch.cuda.get_device_properties(0).major >= 8:
-        torch.backends.cuda.matmul.allow_tf32 = True
-        torch.backends.cudnn.allow_tf32 = True
-
-    sam2_checkpoint = "segment-anything-2/checkpoints/sam2_hiera_large.pt"
-    model_cfg = "sam2_hiera_l.yaml"
-
-    predictor = build_sam2_video_predictor(
-        model_cfg, sam2_checkpoint, device="cuda:0"
-    )
-
-    # First Round for sampling
-    video_dir = (
-        os.path.dirname(video_path)
-        + f"/sample_freq_{sample_freq}_"
-        + video_path.split("/")[-1].split(".")[0]
-    )
-    if not os.path.exists(video_dir):
-        video2jpg(video_path, video_dir, sample_freq)
-
-    frame_names = [
-        p
-        for p in os.listdir(video_dir)
-        if os.path.splitext(p)[-1] in [".jpg", ".jpeg", ".JPG", ".JPEG"]
-    ]
-    frame_names.sort(key=lambda p: int(os.path.splitext(p)[0]))
-
-    inference_state = predictor.init_state(video_path=video_dir)
-    predictor.reset_state(inference_state)
-
-    prompts = {}  # Hold all the clicks we add for visualization
-
-    ann_frame_idx = 0  # The frame index we interact with
-    ann_obj_id = 1  # Give a unique id to each object we interact with
-
-    for i in range(len(masks_np)):
-        _, out_obj_ids, out_mask_logits = predictor.add_new_mask(
-            inference_state=inference_state,
-            frame_idx=ann_frame_idx,
-            obj_id=i,
-            mask=masks_np[i][0],
-        )
-
-    # Run propagation throughout the video and collect the results in a dict
-    video_segments = {}  # Contains the per-frame segmentation results
-    for (
-        out_frame_idx,
-        out_obj_ids,
-        out_mask_logits,
-    ) in predictor.propagate_in_video(inference_state):
-        video_segments[out_frame_idx] = {
-            out_obj_id: (out_mask_logits[i] > 0.0).cpu().numpy()
-            for i, out_obj_id in enumerate(out_obj_ids)
-        }
-
-    # Second Round for processing whole video
-    del inference_state
-    del predictor
-    torch.cuda.empty_cache()
-    torch.cuda.set_device(1)
-
-    predictor = build_sam2_video_predictor(model_cfg, sam2_checkpoint)
-
-    video_dir = os.path.dirname(video_path) + "/" + video_path.split("/")[-1].split(".")[0]
-    if not os.path.exists(video_dir):
-        video2jpg(video_path, video_dir, 1)
-
-    frame_names = [
-        p
-        for p in os.listdir(video_dir)
-        if os.path.splitext(p)[-1] in [".jpg", ".jpeg", ".JPG", ".JPEG"]
-    ]
-    frame_names.sort(key=lambda p: int(os.path.splitext(p)[0]))
-
-    inference_state = predictor.init_state(video_path=video_dir)
-    predictor.reset_state(inference_state)
-
-    prompts = {}
-
-    ann_frame_idx = 0
-    ann_obj_id = 1
-
-    for frame_idx in range(0, len(frame_names), sample_freq):
-        for k in video_segments[frame_idx // sample_freq].keys():
-            _, out_obj_ids, out_mask_logits = predictor.add_new_mask(
-                inference_state=inference_state,
-                frame_idx=frame_idx,
-                obj_id=k,
-                mask=video_segments[frame_idx // sample_freq][k][0],
-            )
-
-    video_segments = {}
-    for (
-        out_frame_idx,
-        out_obj_ids,
-        out_mask_logits,
-    ) in predictor.propagate_in_video(inference_state):
-        video_segments[out_frame_idx] = {
-            out_obj_id: (out_mask_logits[i] > 0.0).cpu().numpy()
-            for i, out_obj_id in enumerate(out_obj_ids)
-        }
-
-    # Third Part: Select key frames and compute center coordinates of masks
-    key_frame_coordinates = {}
-    for frame_idx in key_frames:
-        current_frame_coords = []
-
-        if frame_idx in video_segments:
-            for obj_id, mask in video_segments[frame_idx].items():
-                mask_data = mask[0]
-                mask_indices = np.argwhere(mask_data > 0)
-
-                if len(mask_indices) > 0:
-                    avg_y, avg_x = np.mean(mask_indices, axis=0)
-                    current_frame_coords.append(
-                        f"Object {obj_id}: ({int(avg_x)}, {int(avg_y)})"
-                    )
-                else:
-                    print(
-                        f"Warning: Empty mask for object {obj_id} in frame {frame_idx}"
-                    )
-
-        key_frame_coordinates[f"key_frame{frame_idx}"] = current_frame_coords
-
-    for key_frame, coordinates in key_frame_coordinates.items():
-        print(f"{key_frame}: {coordinates}")
-
-    output_file = bbx_file
-
-    # Store the coordinates in an output file
-    with open(output_file, mode="a", newline="") as file:
-        writer = csv.writer(file)
-
-        all_coordinates = []
-        for key_frame, coordinates in key_frame_coordinates.items():
-            coordinates_str = "\n".join(coordinates)
-            all_coordinates.append(f"{key_frame}: {coordinates_str}")
-
-        final_coordinates_str = "\n".join(all_coordinates)
-
-        writer.writerow([input_video_path, final_coordinates_str])
-
-    # Fourth Part: Append all the painted frames into a video
-    painted_frames = []
-    for i in range(len(frame_names)):
-        img = cv2.imread(os.path.join(video_dir, frame_names[i]))
-        img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-        for k in video_segments[i].keys():
-            img = contour_painter(
-                img, video_segments[i][k][0], contour_color=1, ann_obj_id=k
-            )
-        painted_frames.append(img)
-
-    mask_add = {}
-    mask_min = {}
-    for k in video_segments[i].keys():
-        mask_add[k] = []
-        mask_min[k] = []
-
-    write_video(painted_frames, output_video_path, fps=30)
-
-    for i in range(len(frame_names) - 1):
-        for k in video_segments[i].keys():
-            mask_before = video_segments[i][k][0].copy()
-            mask_after = video_segments[i + 1][k][0].copy()
-            mask_after[mask_before] = False
-            add_cnt = np.sum(mask_after)
-
-            mask_before = video_segments[i][k][0].copy()
-            mask_after = video_segments[i + 1][k][0].copy()
-            mask_before[mask_after] = False
-            min_cnt = np.sum(mask_before)
-
-            mask_add[k].append(add_cnt.item())
-            mask_min[k].append(min_cnt.item())
-
-    process_mask_signal(mask_add, mask_min)
-
-
+        actual_frame_count += 1
+    # Reset the capture to the beginning of the video
+    cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+    print(f"Actual frame count: {actual_frame_count}")
+    # Iterate through index list and get the frame list
+    for index in selected_frame_index:
+        if index < actual_frame_count:
+            cap.set(cv2.CAP_PROP_POS_FRAMES, index)
+            ret, cv2_image = cap.read()
+            if ret:
+                selected_raw_frames1.append(cv2_image)
+            else:
+                print(f"Failed to retrieve frame at index {index}")
+        else:
+            print(f"Frame index {index} is out of range for this video.")
+    # Release video capture object
+    cap.release()
+    # 调用处理函数
+    selected_frames1 = extract_frame_list(selected_raw_frames1)
+    response_state = get_object_list(selected_frames1)
+    num, obj_list = extract_num_object(response_state)
+    print("Number of objects:", num)
+    print("available objects:", obj_list)
+    # obj_list = "green corn, orange carrot, red pepper, white bowl, glass container"
+    # process the key frames
+    string_cache = process_images(selected_frames1, obj_list)
+    if string_cache.endswith(" and then "):
+        my_string = string_cache.removesuffix(" and then ")
+    results_file = "./new_vegetable_results.csv"
+    save_results_to_csv(demo_name, num, obj_list, string_cache, results_file)
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(
-        description="Process video with SAM and GroundingDINO."
-    )
-    parser.add_argument("--input", type=str, help="Path to the input video")
-    parser.add_argument("--output", type=str, help="Path to the output video")
-    parser.add_argument("--key_frames", nargs="+", type=int, help="List of key frame indices")
-    parser.add_argument("--bbx_file", type=str, help="Path to store coordinates of bounding boxes")
-
+    parser = argparse.ArgumentParser(description="Process video and key frame extraction.")
+    parser.add_argument('--input', type=str, required=True, help='Input video path')
+    parser.add_argument('--list', type=str, required=True, help='List of key frame indexes')
+    parser.add_argument('--bbx_csv', type=str, required=True, help='csv of bbx')
+    parser.add_argument('--demo', type=str, required=True, help='demo name')
     args = parser.parse_args()
-    print(f"Received key_frames: {args.key_frames}")
-
-    main(args.input, args.output, args.key_frames, args.bbx_file)
+    # Call the main function with arguments
+    main(args.input, args.list, args.demo, args.bbx_csv)

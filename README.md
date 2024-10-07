@@ -33,6 +33,7 @@ echo 'projectkey = "YOUR_OPENAI_API_KEY"' > key.py
 ## Pipeline
 
 There are mainly four parts of SeeDo. To ensure the video is successfully processed in subsequent steps, use `convert_video.py` to convert the video to the appropriate encoding before inputting it. The `convert_video.py` script accepts two parameters: `--input` and `--output`, which specify the path of your original video and the path of the converted video, respectively.
+*Currently, this repo only supports the code of the first three modules *
 
 1. **Keyframe Selection Module**
 

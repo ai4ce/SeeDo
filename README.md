@@ -2,7 +2,7 @@
 
 **VLM See, Robot Do (SeeDo)** is a method that uses large vision models, tracking models and vision-language models to extract robot action plan from human demonstration video, specifically focusing on long horizon pick-and-place tasks. The action plan is then implemented in realworld and PyBullet simulation environment.
 
-![main](https://private-user-images.githubusercontent.com/114624448/374222981-ca9951c4-d16d-49c9-a472-85d07dcc0ef5.jpg?jwt=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJnaXRodWIuY29tIiwiYXVkIjoicmF3LmdpdGh1YnVzZXJjb250ZW50LmNvbSIsImtleSI6ImtleTUiLCJleHAiOjE3MjgzMjExMjEsIm5iZiI6MTcyODMyMDgyMSwicGF0aCI6Ii8xMTQ2MjQ0NDgvMzc0MjIyOTgxLWNhOTk1MWM0LWQxNmQtNDljOS1hNDcyLTg1ZDA3ZGNjMGVmNS5qcGc_WC1BbXotQWxnb3JpdGhtPUFXUzQtSE1BQy1TSEEyNTYmWC1BbXotQ3JlZGVudGlhbD1BS0lBVkNPRFlMU0E1M1BRSzRaQSUyRjIwMjQxMDA3JTJGdXMtZWFzdC0xJTJGczMlMkZhd3M0X3JlcXVlc3QmWC1BbXotRGF0ZT0yMDI0MTAwN1QxNzA3MDFaJlgtQW16LUV4cGlyZXM9MzAwJlgtQW16LVNpZ25hdHVyZT05N2I1YjUwMDQyZDliNDgzZGJjMmZiODM4MDg3OTgzZjNmNjJmYTVjNDNmNzZhMTQwNDVhZDBhNmVmOGVjZDQxJlgtQW16LVNpZ25lZEhlYWRlcnM9aG9zdCJ9.BJ5XNHeEAiYaQrPUvfvpfkJ82SNA-iiwpjjTTlXNGDw)
+![main](https://github.com/ai4ce/SeeDo/blob/main/media/main.jpg)
 
 ## Setup Instructions
 

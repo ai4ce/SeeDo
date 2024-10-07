@@ -24,9 +24,22 @@ tracker/
 # csv files
 *.csv
 
+# pycache
+__pycache__/
+
+# results
+results/
+
+# bash code
+*.sh
+
+run.py
+
 ############################media###############################
 # media/
 media/
+test_media/
 VLM_CaP/bowl/
 VLM_CaP/robotiq_2f_85/
 VLM_CaP/ur5e/
+VLM_CaP/src/key.py

@@ -1,25 +1,15 @@
-import copy
-import numpy as np
 import cv2
-import shapely
 from shapely.geometry import *
 from shapely.affinity import *
-import matplotlib.pyplot as plt
 from openai import OpenAI
-from src.key import mykey, projectkey
-import sys
-from IPython.display import display, Image
-import base64
-from io import BytesIO
+from VLM_CaP.src.key import projectkey
 import os
 import re
-from PIL import Image
-from collections import Counter
 import argparse
 import csv
 import ffmpy
 import ast
-from src.vlm_video import extract_frame_list  # import extract_frames
+from VLM_CaP.src.vlm_video import extract_frame_list  # import extract_frames
 # set up your openai api key
 client = OpenAI(api_key=projectkey)
 # def for calling openai api with different prompts
@@ -224,18 +214,12 @@ def process_images(selected_frames, obj_list):
         
     return string_cache
 def save_results_to_csv(demo_name, num, obj_list, string_cache, output_file):
-    """
-    将结果保存到指定的 CSV 文件中，追加模式不会覆盖之前的内容。
-    如果文件不存在，则创建并写入标题行。
-    """
     file_exists = os.path.exists(output_file)
     with open(output_file, mode='a', newline='') as file:
         writer = csv.writer(file)
-        # 如果文件不存在，则写入标题行
         if not file_exists:
             writer.writerow(["demo", "object", "action list"])
         
-        # 写入数据
         writer.writerow([f"{demo_name}", f"{num} objects: {', '.join(obj_list)}", string_cache])
     print(f"Results appended to {output_file}")
 def convert_video_to_mp4(input_path):
@@ -254,45 +238,13 @@ def convert_video_to_mp4(input_path):
     ff.run()
     print(f"Video converted successfully: {output_path}")
     return output_path
-def extract_bbx_list_from_csv(csv_file, input_video_path):
-    """
-    根据输入的视频路径，从CSV文件中提取对应的bbx列表，并按key_frame的index排序。
-    """
-    with open(csv_file, mode='r') as file:
-        reader = csv.DictReader(file)
-        for row in reader:
-            # 这里可以确保 input_video_path 与 row['demo'] 是否完全匹配
-            if row['demo'] == input_video_path:
-                # 提取bbx列，并按照key_frame的index排序
-                bbx_info = row['bbx_list']
-                # 提取出关键帧信息，格式为 key_frame<number>: <bounding_box_data>
-                key_frame_data = re.findall(r'key_frame(\d+): (.+)', bbx_info)
-                # 按关键帧 index 排序
-                sorted_bbx_list = sorted(key_frame_data, key=lambda x: int(x[0]))
-                # 处理排序后的信息并转换为 {index: bounding_box} 的形式
-                bbx_list = []
-                for _, objects in sorted_bbx_list:
-                    # 匹配 Object 的 bounding box 数据，假设 x 和 y 是整数
-                    object_bbx = re.findall(r'Object (\d+): \((\d+), (\d+)\)', objects)
-                    # 如果需要支持浮点数，可以将 (\d+) 改为 ([\d.]+)
-                    bbx_list.append({int(obj_index): (int(x), int(y)) for obj_index, x, y in object_bbx})
-                return bbx_list  # 返回处理后的 bbx_list
-    # 如果没有找到对应的 demo，返回 None
-    return None
-def main(input_video_path, frame_index_list, demo_name, csv_file):
-    # 如果 frame_index_list 是字符串，使用 ast.literal_eval 将其转换为列表
-    # 现在转换为整数列表
-    frame_index_list = ast.literal_eval(frame_index_list)
-    # 从csv_file中提取与input_video_path对应的bbx_list
-    # bbx_list = extract_bbx_list_from_csv(csv_file, input_video_path)
-    # if not bbx_list:
-    #     print(f"No matching bbx list found for {input_video_path}")
-    #     return
-    # video path
+
+def main(input_video_path, frame_index_list, bbx_list):
     video_path = input_video_path
     # list to store key frames
     selected_raw_frames1 = []
     # list to store key frame indexes
+    frame_index_list = ast.literal_eval(frame_index_list)
     selected_frame_index = frame_index_list
     # Convert the video to H.264 encoded .mp4 format
     # converted_video_path = convert_video_to_mp4(video_path)
@@ -321,7 +273,6 @@ def main(input_video_path, frame_index_list, demo_name, csv_file):
             print(f"Frame index {index} is out of range for this video.")
     # Release video capture object
     cap.release()
-    # 调用处理函数
     selected_frames1 = extract_frame_list(selected_raw_frames1)
     response_state = get_object_list(selected_frames1)
     num, obj_list = extract_num_object(response_state)
@@ -332,14 +283,14 @@ def main(input_video_path, frame_index_list, demo_name, csv_file):
     string_cache = process_images(selected_frames1, obj_list)
     if string_cache.endswith(" and then "):
         my_string = string_cache.removesuffix(" and then ")
-    results_file = "./new_vegetable_results.csv"
-    save_results_to_csv(demo_name, num, obj_list, string_cache, results_file)
+    print(my_string)
+    return my_string
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Process video and key frame extraction.")
     parser.add_argument('--input', type=str, required=True, help='Input video path')
     parser.add_argument('--list', type=str, required=True, help='List of key frame indexes')
-    parser.add_argument('--bbx_csv', type=str, required=True, help='csv of bbx')
-    parser.add_argument('--demo', type=str, required=True, help='demo name')
+    parser.add_argument('--bbx_list', type=str, required=True, help='Bbx of key frames')
     args = parser.parse_args()
     # Call the main function with arguments
-    main(args.input, args.list, args.demo, args.bbx_csv)
+    main(args.input, args.list, args.bbx_list)

@@ -9,6 +9,7 @@ import csv
 import base64
 from io import BytesIO
 from collections import Counter
+import ast
 
 import numpy as np
 import torch
@@ -389,7 +390,9 @@ def process_mask_signal(mask_add, mask_min):
     plt.show()
 
 
-def main(input_video_path, output_video_path, key_frames, bbx_file):
+def main(input_video_path, output_video_path, key_frames):
+    key_frames = ast.literal_eval(key_frames)
+
     # First Part: Get object list from first key_frame using VLM
     client = OpenAI(api_key=projectkey)
 
@@ -616,43 +619,43 @@ def main(input_video_path, output_video_path, key_frames, bbx_file):
 
     # Third Part: Select key frames and compute center coordinates of masks
     key_frame_coordinates = {}
+
+    # Iterate through the key frames provided
     for frame_idx in key_frames:
         current_frame_coords = []
 
+        # Check if the frame exists in the video segments (contains mask data)
         if frame_idx in video_segments:
+            # For each object in the frame, retrieve the mask
             for obj_id, mask in video_segments[frame_idx].items():
                 mask_data = mask[0]
-                mask_indices = np.argwhere(mask_data > 0)
+                mask_indices = np.argwhere(mask_data > 0)  # Get non-zero pixel indices
 
                 if len(mask_indices) > 0:
+                    # Calculate the average x and y coordinates of the mask to get the center
                     avg_y, avg_x = np.mean(mask_indices, axis=0)
                     current_frame_coords.append(
                         f"Object {obj_id}: ({int(avg_x)}, {int(avg_y)})"
                     )
                 else:
+                    # Print a warning if the mask is empty
                     print(
                         f"Warning: Empty mask for object {obj_id} in frame {frame_idx}"
                     )
 
+        # Store the coordinates for the current frame
         key_frame_coordinates[f"key_frame{frame_idx}"] = current_frame_coords
 
+    # Initialize an empty string to store the result
+    bbx_string = ""
+
+    # Iterate through the key_frame_coordinates and generate the string
     for key_frame, coordinates in key_frame_coordinates.items():
-        print(f"{key_frame}: {coordinates}")
+        coordinates_str = "\n".join(coordinates)  # Join the coordinates into a single string
+        bbx_string += f"{key_frame}\n{coordinates_str}\n\n"  # Append the key frame and coordinates
 
-    output_file = bbx_file
-
-    # Store the coordinates in an output file
-    with open(output_file, mode="a", newline="") as file:
-        writer = csv.writer(file)
-
-        all_coordinates = []
-        for key_frame, coordinates in key_frame_coordinates.items():
-            coordinates_str = "\n".join(coordinates)
-            all_coordinates.append(f"{key_frame}: {coordinates_str}")
-
-        final_coordinates_str = "\n".join(all_coordinates)
-
-        writer.writerow([input_video_path, final_coordinates_str])
+    # Print the final bounding box string
+    print(f"Bounding box extraction completed. Result:\n{bbx_string}")
 
     # Fourth Part: Append all the painted frames into a video
     painted_frames = []
@@ -689,6 +692,9 @@ def main(input_video_path, output_video_path, key_frames, bbx_file):
             mask_min[k].append(min_cnt.item())
 
     process_mask_signal(mask_add, mask_min)
+    # Return the final bounding box string
+    print(bbx_string)
+    return bbx_string
 
 
 if __name__ == "__main__":
@@ -697,10 +703,8 @@ if __name__ == "__main__":
     )
     parser.add_argument("--input", type=str, help="Path to the input video")
     parser.add_argument("--output", type=str, help="Path to the output video")
-    parser.add_argument("--key_frames", nargs="+", type=int, help="List of key frame indices")
-    parser.add_argument("--bbx_file", type=str, help="Path to store coordinates of bounding boxes")
+    parser.add_argument("--key_frames", type=str, help="List of key frame indices as a string")
 
     args = parser.parse_args()
-    print(f"Received key_frames: {args.key_frames}")
 
-    main(args.input, args.output, args.key_frames, args.bbx_file)
+    main(args.input, args.output, args.key_frames)

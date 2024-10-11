@@ -3,10 +3,10 @@
 <head>
   <meta charset="utf-8">
   <meta name="description"
-        content="FusionSense: Bridging Common Sense, Vision, and Touch for Robust Sparse-View Reconstruction">
-  <meta name="keywords" content="Tactile Sensing, 3D Gaussian, Sparse-View Reconstruction">     
+        content="SeeDo: Human Demo Video to Robot Action Plan via Vision Language Model">
+  <meta name="keywords" content="Multimodal Large Language Model, Vision Language Model, Learning from Human Demonstrations">     
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>FusionSense</title>
+  <title>VLM See, Robot Do</title>
 
   <!-- Global site tag (gtag.js) - Google Analytics -->
   <!-- <script async src="https://www.googletagmanager.com/gtag/js?id=G-PYVRSFMDRL"></script>
@@ -79,49 +79,32 @@
       <div class="columns is-centered">
         <div class="column has-text-centered">
           <h1 class="title is-1 publication-title">
-            FusionSense
+            VLM See, Robot Do:
           </h1>
-          <h1 class="title is-2 publication-title">Bridging Common Sense, Vision, and Touch for Robust Sparse-View Reconstruction</h1>
+          <h1 class="title is-2 publication-title">Human Demo Video to Robot Action Plan via Vision Language Model</h1>
           <!-- <div class="column is-full_width">
             <h2 class="title is-4"><a href="https://2025.ieee-icra.org">ICRA 2025 (Under Review)</a></h2>
           </div> -->
           <div class="is-size-5 publication-authors">
             <span class="author-block">
-              <a href="https://irvingf7.github.io/">Irving Fang*</a><sup>1</sup>,</span>
+              <a href="https://scholar.google.com/citations?user=ACFrFnYAAAAJ&hl=en">Beichen Wang</a><sup>*</sup><sup>1</sup>,</span>
             <span class="author-block">
-              <a href="https://kairui-shi.github.io/">Kairui Shi*</a><sup>1</sup>,</span>
+              <a href="https://juexzz.github.io/">Juexiao Zhang</a><sup>*</sup><sup>1</sup>,</span>
             <span class="author-block">
-              <a href="https://www.linkedin.com/in/kim-he-064a36258/">Xujin He*</a><sup>1</sup>
+              <a href="https://www.linkedin.com/in/shuwen-dong-1342832b1">Shuwen Dong</a><sup>&dagger;</sup><sup>1</sup>
             </span>
             <span class="author-block">
-              <a href="https:">Siqi Tan</a><sup>1</sup>,
-            </span>
-            <span class="author-block">
-              <a href="https:">Yifan Wang</a><sup>1</sup>,
-            </span>
-            <span class="author-block">
-              <a href="https://www.linkedin.com/in/hanwen-zhao-2523a4104/">Hanwen Zhao</a><sup>1</sup>,
-            </span>
-            <span class="author-block">
-              <a href="https://joehjhuang.github.io">Hung-Jui Huang</a><sup>2</sup>,
-            </span>
-            <span class="author-block">
-              <a href="https://scholar.google.com/citations?user=SNqm6doAAAAJ&hl=en">Wenzhen Yuan</a><sup>3</sup>,
+              <a href="https://irvingf7.github.io/">Irving Fang</a><sup>&dagger;</sup><sup>1</sup>,
             </span>
             <span class="author-block">
               <a href="https://scholar.google.com/citations?user=YeG8ZM0AAAAJ">Chen Feng</a><sup>1</sup>,
-            </span>
-            <span class="author-block">
-              <a href="https://jingz6676.github.io">Jing Zhang</a><sup>1</sup>
             </span>
           </div>
 
           <div class="is-size-5 publication-authors">
             <span class="author-block"><sup>1</sup> New York University, </span>
-            <span class="author-block"><sup>2</sup> Carnegie Mellon University, </span>
-            <span class="author-block"><sup>3</sup> University of Illinois, Urbana-Champaign </span>
             <br>
-            <span class="author-block"><sup>*</sup> Equal Contribution </span>
+            <span class="author-block"><sup>*</sup> Equal Contribution first authors. <sup>&dagger;</sup> Equal contribution second authors.</span>
           </div>
 
 
@@ -150,17 +133,17 @@
              <!-- </span> -->
               <!-- Video Link. -->
               <span class="link-block">
-                <a href="https://youtu.be/thC0PeAQxe0"
+                <!-- <a href="https://youtu.be/thC0PeAQxe0"
                    class="external-link button is-normal is-rounded is-dark">
                   <span class="icon">
                       <i class="fab fa-youtube"></i>
                   </span>
                   <span>Video</span>
-                </a>
+                </a> -->
               </span>
               <!-- Code Link. -->
               <span class="link-block">
-                <a href="https://github.com/ai4ce/FusionSense"
+                <a href="https://github.com/ai4ce/SeeDo"
                    class="external-link button is-normal is-rounded is-dark">
                   <span class="icon">
                       <i class="fab fa-github"></i>
@@ -193,12 +176,12 @@
     <div class="columns is-centered has-text-centered">
       <div class="column is-full-width teaser no-margin">
         
-        <h2 class="title is-3">Snapshot</h2>
+        <h2 class="title is-3">TLDR</h2>
         <p style="font-size: 20px; background-color: #8b00e13b;">
-          Reconstruct <b>visually</b> and <b>geometrically</b> accurate scene and object from <b>sparse-view</b> RGB-D images, enhanced with <b>tactile sensing</b>.
+          Interpret human demonstration videos and generate robot action plans using a pipeline of <b>selection module</b>, <b>visual perception module</b> and <b>vision language model reasoning module</b>.
         </p>
         <br>
-        <div class="sliders-container">
+        <!-- <div class="sliders-container">
           <div class="slider-wrapper">
             <h2>Novel View Synthesis (RGB) </h2>
             <div id="trans_rgb"></div>
@@ -208,9 +191,9 @@
             <div id="trans_object"></div>
           </div>
         </div>
-        <br>
+        <br> -->
         <!-- depth and normal sliders -->
-        <div class="sliders-container">
+        <!-- <div class="sliders-container">
           <div class="slider-wrapper">
             <h2>Novel View Synthesis (Depth) </h2>
             <div id="trans_depth"></div>
@@ -219,12 +202,12 @@
             <h2>Novel View Synthesis (Normal)</h2>
             <div id="trans_normal"></div>
           </div>
-        </div>
+        </div> -->
 
-        <script src="https://cdn.knightlab.com/libs/juxtapose/latest/js/juxtapose.min.js"></script>
+        <!-- <script src="https://cdn.knightlab.com/libs/juxtapose/latest/js/juxtapose.min.js"></script>
         <link rel="stylesheet" href="https://cdn.knightlab.com/libs/juxtapose/latest/css/juxtapose.css">
-        <script src="./static/js/juxtapose-slider.js"></script> <!-- Include your slider.js file -->
-        <script>
+        <script src="./static/js/juxtapose-slider.js"></script>  -->
+        <!-- <script>
           // Slider configurations
           const sliders = [
             {
@@ -287,7 +270,12 @@
     
           // Initialize sliders
           initializeSliders(sliders);
-        </script>
+        </script> -->
+        <center>
+          <div id="overview">
+            <img src="./static/images/teaser.jpg" style="width: 45vw; min-width: 330px;" alt="Teaser Image"> 
+          </div>
+        </center>
       </div>
     </div>
   </div>
@@ -296,7 +284,7 @@
 <hr>
 
 <!-- How it works -->
-<section class="section">
+<!-- <section class="section">
   <div class="container is-max-desktop">
     <div class="columns is-centered ">
       <div class="column is-full-width">
@@ -315,10 +303,10 @@
       </div>
     </div>
   </div>
-</section>
+</section> -->
 
 <!-- Video Comparison -->
-<section class="section">
+<!-- <section class="section">
   <div class="container is-max-desktop">
     <div class="columns is-centered ">
       <div class="column is-full-width">
@@ -353,7 +341,7 @@
       </div>
     </div>
   </div>
-</section>
+</section> -->
 
 <hr>
 
@@ -365,10 +353,10 @@
         <h2 class="title is-3 has-text-centered">Method</h2>
         <center>
           <div id="overview">
-            <img src="./static/images/Overview.png" style="width: 45vw; min-width: 330px;" alt="Overview Image"> 
+            <img src="./static/images/main.jpg" style="width: 55vw; min-width: 330px;" alt="Method Image"> 
           </div>
 
-          <button id="method_button1" class="btn" onclick="changeContent(1)">1. Robust Global Shape Representation</button>
+          <!-- <button id="method_button1" class="btn" onclick="changeContent(1)">1. Robust Global Shape Representation</button>
           <button id="method_button2" class="btn" onclick="changeContent(2)">2. Active Touch Selection</button>
           <button id="method_button3" class="btn" onclick="changeContent(3)">3. Local Geometric Optimization</button>
 
@@ -384,10 +372,10 @@
             <center>
               <img id="image-content" src="./static/images/Method_1.png" style="width: 45vw; min-width: 330px;" />
             </center>
-          </div>
+          </div> -->
         </center>
 
-        <script>
+        <!-- <script>
           document.getElementById('method_button1').classList.add('active');
           function changeContent(buttonNumber) {
               const textElement = document.getElementById('text-content');
@@ -434,7 +422,7 @@
                   // imageElement.alt = "Image 3";
               }
           }
-        </script>
+        </script> -->
 
       </div>
     </div>
@@ -450,7 +438,7 @@
       <div class="column is-full-width">
         
         <h2 class="title is-3">More Visualizations</h2>
-        <center>
+        <!-- <center>
           <button class="btn" id="black_9_button" onclick="switchSlider('black_9')">Black Bunny (9 Views)</button>
           <button class="btn" id="black_5_button" onclick="switchSlider('black_5')">Black Bunny (5 Views)</button>
           <button class="btn" id="reflective_9_button" onclick="switchSlider('reflective_9')">Reflective Bunny (9 Views)</button>
@@ -461,9 +449,9 @@
           <button class="btn" id="coke_5_button" onclick="switchSlider('coke_5')">Coke Bottle (5 Views)</button>
           <br>
           <br>
-        </center>
+        </center> -->
 
-        <div class="slider-block" id="black_9_block">
+        <!-- <div class="slider-block" id="black_9_block">
           <div class="sliders-container">
             <div class="slider-wrapper">
               <h2>Novel View Synthesis (RGB) </h2>
@@ -475,7 +463,6 @@
             </div>
           </div>
           <br>
-          <!-- depth and normal sliders -->
           <div class="sliders-container">
             <div class="slider-wrapper">
               <h2>Novel View Synthesis (Depth) </h2>
@@ -486,9 +473,9 @@
               <div id="black_9_normal"></div>
             </div>
           </div>
-        </div>
+        </div> -->
 
-        <div class="slider-block" id="black_5_block">
+        <!-- <div class="slider-block" id="black_5_block">
           <div class="sliders-container">
             <div class="slider-wrapper">
               <h2>Novel View Synthesis (RGB) </h2>
@@ -500,7 +487,6 @@
             </div>
           </div>
           <br>
-          <!-- depth and normal sliders -->
           <div class="sliders-container">
             <div class="slider-wrapper">
               <h2>Novel View Synthesis (Depth) </h2>
@@ -511,14 +497,13 @@
               <div id="black_5_normal"></div>
             </div>
           </div>
-        </div>
+        </div> -->
 
-        <script src="https://cdn.knightlab.com/libs/juxtapose/latest/js/juxtapose.min.js"></script>
+        <!-- <script src="https://cdn.knightlab.com/libs/juxtapose/latest/js/juxtapose.min.js"></script>
         <link rel="stylesheet" href="https://cdn.knightlab.com/libs/juxtapose/latest/css/juxtapose.css">
-        <script src="./static/js/juxtapose-slider.js"></script> <!-- Include your slider.js file
+        <script src="./static/js/juxtapose-slider.js"></script> <!-- Include your slider.js file -->
          
-        <!-- script for the sliders -->
-        <script>
+        <!-- <script>
           // Slider configurations
           let slider_dict = {
             black_9: 
@@ -666,7 +651,7 @@
                 selectedDiv.initialized = true;
               }
           }
-        </script>
+        </script> -->
       </div>
     </div>
   </div>
@@ -694,7 +679,7 @@ Coming Soon
 <section class="section" id="Acknowledgements">
   <div class="container is-max-desktop content">
     <h2 class="title">Acknowledgements</h2>
-    Jing Zhang and Chen Feng are the corresponding authors. The work was supported in part through NSF grants 2024882, 2152565, and 2238968.
+    The work was supported in part through NSF grants 2238968, 2322242, and 2024882, and the NYU IT High Performance Computing resources, services, and staff expertise.
   </div>
 </section>
           

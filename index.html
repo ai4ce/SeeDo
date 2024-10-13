@@ -104,7 +104,7 @@
           <div class="is-size-5 publication-authors">
             <span class="author-block"><sup>1</sup> New York University, </span>
             <br>
-            <span class="author-block"><sup>*</sup> Equal Contribution first authors. <sup>&dagger;</sup> Equal contribution second authors.</span>
+            <span class="author-block"><sup>*</sup> Equal contribution, first authors. <sup>&dagger;</sup> Equal contribution, second authors.</span>
           </div>
 
 
@@ -178,99 +178,10 @@
         
         <h2 class="title is-3">TLDR</h2>
         <p style="font-size: 20px; background-color: #8b00e13b;">
-          Interpret human demonstration videos and generate robot action plans using a pipeline of <b>selection module</b>, <b>visual perception module</b> and <b>vision language model reasoning module</b>.
+          Interpret human demonstration videos and generate robot action plans using a pipeline of keyframe selection, visual perception and vision language model reasoning.
         </p>
         <br>
-        <!-- <div class="sliders-container">
-          <div class="slider-wrapper">
-            <h2>Novel View Synthesis (RGB) </h2>
-            <div id="trans_rgb"></div>
-          </div>
-          <div class="slider-wrapper">
-            <h2>Object Reconstruction (RGB)</h2>
-            <div id="trans_object"></div>
-          </div>
-        </div>
-        <br> -->
-        <!-- depth and normal sliders -->
-        <!-- <div class="sliders-container">
-          <div class="slider-wrapper">
-            <h2>Novel View Synthesis (Depth) </h2>
-            <div id="trans_depth"></div>
-          </div>
-          <div class="slider-wrapper">
-            <h2>Novel View Synthesis (Normal)</h2>
-            <div id="trans_normal"></div>
-          </div>
-        </div> -->
 
-        <!-- <script src="https://cdn.knightlab.com/libs/juxtapose/latest/js/juxtapose.min.js"></script>
-        <link rel="stylesheet" href="https://cdn.knightlab.com/libs/juxtapose/latest/css/juxtapose.css">
-        <script src="./static/js/juxtapose-slider.js"></script>  -->
-        <!-- <script>
-          // Slider configurations
-          const sliders = [
-            {
-              elementId: '#trans_rgb',
-              images: [
-                {
-                  src: './static/images/FS_trans_RGB_22.png',
-                  label: 'FusionSense',
-                },
-                {
-                  src: './static/images/DN_trans_RGB_22.png',
-                  label: 'DN-Splatter',
-                }
-              ],
-              options: sliderOptions // You can reference the options defined in slider.js if needed
-            },
-            {
-              elementId: '#trans_object',
-              images: [
-                {
-                  src: './static/images/FS_trans_obj_7.jpg',
-                  label: 'FusionSense',
-                },
-                {
-                  src: './static/images/GO_trans_obj_7.png',
-                  label: 'GaussianObject',
-                }
-              ],
-              options: sliderOptions // Reference the same or a different options object
-            },
-            {
-              elementId: '#trans_depth',
-              images: [
-                {
-                  src: './static/images/FS_trans_depth_0.png',
-                  label: 'FusionSense',
-                },
-                {
-                  src: './static/images/DN_trans_depth_0.png',
-                  label: 'DN-Splatter',
-                }
-              ],
-              options: sliderOptions // You can reference the options defined in slider.js if needed
-            },
-            {
-              elementId: '#trans_normal',
-              images: [
-                {
-                  src: './static/images/FS_trans_normal_22.png',
-                  label: 'FusionSense',
-                },
-                {
-                  src: './static/images/DN_trans_normal_22.png',
-                  label: 'DN-Splatter',
-                }
-              ],
-              options: sliderOptions // Reference the same or a different options object
-            }
-          ];
-    
-          // Initialize sliders
-          initializeSliders(sliders);
-        </script> -->
         <center>
           <div id="overview">
             <img src="./static/images/teaser.jpg" style="width: 45vw; min-width: 330px;" alt="Teaser Image"> 
@@ -283,27 +194,6 @@
 
 <hr>
 
-<!-- How it works -->
-<!-- <section class="section">
-  <div class="container is-max-desktop">
-    <div class="columns is-centered ">
-      <div class="column is-full-width">
-        <h2 class="title is-3 has-text-centered">How It Works</h2>
-        <div class="content has-text-justified">
-          <p>
-          1. <b>Robust Global Shape Representation:</b> Visual hull and depth estimated from foundation models initiates 3D Gaussians. RGB-D images and foundation-model-estimated normals are used to supervise subsequent training.
-          </p>
-          <p>
-          2. <b>Active Touch Selection:</b> Geometric properties and common-sense from VLM guide the robot to touch the most informative regions.
-          </p>
-          <p>
-          3. <b>Local Geometric Optimization:</b> Add tactile readings as new anchor Gaussian points to improve the original 3D Gaussians.
-          </p>
-        </div>
-      </div>
-    </div>
-  </div>
-</section> -->
 
 <!-- Video Comparison -->
 <!-- <section class="section">
@@ -356,26 +246,22 @@
             <img src="./static/images/main.jpg" style="width: 55vw; min-width: 330px;" alt="Method Image"> 
           </div>
 
-          <!-- <button id="method_button1" class="btn" onclick="changeContent(1)">1. Robust Global Shape Representation</button>
-          <button id="method_button2" class="btn" onclick="changeContent(2)">2. Active Touch Selection</button>
-          <button id="method_button3" class="btn" onclick="changeContent(3)">3. Local Geometric Optimization</button>
+          <button id="method_button1" class="btn" onclick="changeContent(1)">1. Keyframe Selection</button>
+          <button id="method_button2" class="btn" onclick="changeContent(2)">2. Visual Perception</button>
+          <button id="method_button3" class="btn" onclick="changeContent(3)">3. VLM Reasoning</button>
 
           <div class="content has-text-justified">
-            <p id="text-content"> <b>1.1 Hybrid Structure Priors:</b> 
-              <br><b>(1) Visual Hull:</b> After taking sparse view images, we use GPT-4o to classify the centric object. The classification label is fed to <a href=\"https://github.com/IDEA-Research/Grounded-SAM-2\">Grounded SAM 2</a> to acquire the masks of the object. The masks along with the camera poses recorded by the robot are used to estimate the <b>visual hull</b>. This method is robust against traditionally challenging surfaces and materials
-              <br><b>(2) Metric Depth Estimator:</b> For every sparse view RGB image, we use <a href=\"https://jugghm.github.io/Metric3Dv2/\">Metric3D v2</a> to estimate the depth. We do not use the more accurate depth captured by our <a href=\"https://www.intelrealsense.com/depth-camera-d405/\">RealSense</a> camera because we found estimated depth smoother and less noisy. 
-              <br><b>(3) Gaussians Initialization:</b> The visual hull and estimated depth are combined to initialize the 3D Gaussian Primitives.  
-              <br><br><b>1.2 Hull Pruning:</b> 
-              <br><b>(4) Visual Hull Pruning:</b> During training, we design a "shell" around the visual hull to remove floaters around it. Empircally, we notice that those floaters around objects, while small at first, often snowball to very large negative impact on the overall reconstruction quality. 
-              <br><b>(5) Supervision:</b> We then use RGB-D images captured by our RealSense camera and normals estimated from <a href=\"https://baegwangbin.github.io/DSINE/\">DSINE</a> to supervise the subsequent training. 
+            <p id="text-content"> <b>Module 1: Keyframe Selection</b> 
+              <br>We use APIs from the <a href="https://ai.google.dev/edge/mediapipe/solutions/guide">MediaPipe</a> to detect the hand keypoints and calculate the speed of the hand.
+              <br>The speed plot is then interpolated to be continous and the valleys are used as the keyframe selections.
             </p>
-            <center>
+            <!-- <center>
               <img id="image-content" src="./static/images/Method_1.png" style="width: 45vw; min-width: 330px;" />
-            </center>
-          </div> -->
+            </center> -->
+          </div>
         </center>
 
-        <!-- <script>
+        <script>
           document.getElementById('method_button1').classList.add('active');
           function changeContent(buttonNumber) {
               const textElement = document.getElementById('text-content');
@@ -389,40 +275,38 @@
               document.getElementById('method_button' + buttonNumber).classList.add('active');
 
               if (buttonNumber === 1) {
-                  textElement.innerHTML = "<b>1.1 Hybrid Structure Priors:</b> \
-                                           <br><b>(1) Visual Hull:</b> After taking sparse view images, we use GPT-4o to classify the centric object. The classification label is fed to <a href=\"https://github.com/IDEA-Research/Grounded-SAM-2\">Grounded SAM 2</a> to acquire the masks of the object. The masks along with the camera poses recorded by the robot are used to estimate the <b>visual hull</b>. This method is robust against traditionally challenging surfaces and materials \
-                                           <br><b>(2) Metric Depth Estimator:</b> For every sparse view RGB image, we use <a href=\"https://jugghm.github.io/Metric3Dv2/\">Metric3D v2</a> to estimate the depth. We do not use the more accurate depth captured by our <a href=\"https://www.intelrealsense.com/depth-camera-d405/\">RealSense</a> camera because we found estimated depth smoother and less noisy \
-                                           <br><b>(3) Gaussians Initialization:</b> The visual hull and estimated depth are combined to initialize the 3D Gaussian Primitives.  \
-                                           <br><br><b>1.2 Hull Pruning:</b> \
-                                           <br><b>(4) Visual Hull Pruning:</b> During training, we design a \"shell\" around the visual hull to remove floaters around it. Empircally, we notice that those floaters around objects, while small at first, often snowball to very large negative impact on the overall reconstruction quality. \
-                                           <br><b>(5) Supervision:</b> We then use RGB-D images captured by our RealSense camera and normals estimated from <a href=\"https://baegwangbin.github.io/DSINE/\">DSINE</a> to supervise the subsequent training. \
+                  textElement.innerHTML = "<b>Module 1: Keyframe Selection</b> \
+                                          <br>We use APIs from the <a href=\"https://ai.google.dev/edge/mediapipe/solutions/guide\">MediaPipe</a> to detect the hand keypoints and calculate the speed of the hand. \
+                                          <br>The speed plot is then interpolated to be continous and the valleys are used as the keyframe selections. \
                                            ";
-                  imageElement.classList.remove('hidden');
-                  imageElement.src = "./static/images/Method_1.png";
+                  // imageElement.classList.remove('hidden');
+                  // imageElement.src = "./static/images/Method_1.png";
                   // imageElement.alt = "Image 1";
               } else if (buttonNumber === 2) {
-                  textElement.innerHTML = "<b>2.1 Geometry Ranking:</b> \
-                                           <br><b>(1) High Gradient Points:</b> By design, in 3D Gaussian Splatting training, points with high gradient indicate rapid changes in spatial/geometric features and larger discrepancies between the rendering and the ground truth image, which means a need for further optimization. \
-                                           Therefore, we select a few clusters of points with high gradients as seen in <i>Rabbit 3</i>.\
-                                           <br><br><b>2.2 Common-Sense Reranking:</b> \
-                                           <br><b>(2) Semantic Grounding:</b> In the first step, along with classification, we also asked GPT-4o to give us a list of parts of this object. Using zero-shot open-vocabulary part segmentation model such as <a href=\"https://arxiv.org/abs/2212.01558\">PartSLIP</a>, we can ground such semantic information to our reconstruction, as can be seen in <i>Rabbit 2</i>.\
-                                           <br><b>(3) Commen-Sense Ranking:</b> We then ask GPT-4o which part should have priority when it comes to touching.  \
-                                           Then, without violating the geometric ranking, we rank the points within the same cluster based on their part priority. This ensures that even if the part segmentation fails, the robot will still have points to touch, as seen in <i>Rabbit 4</i>";
-                  imageElement.classList.remove('hidden');
-                  imageElement.src = "./static/images/Method_2.png";
+                  textElement.innerHTML = "<b>Module 2: Visual Perception</b> \
+                                           <br><b>(1) Object recognition:</b>  \
+                                           First we prompt the VLM to recognize objects in the initial frame and use the answer as the prompt to prompt <a href=\"https://github.com/IDEA-Research/GroundingDINO\">GroundingDINO</a>, an open vocabulary object detector to obtain the object boundin boxes in the initial frame.\
+                                           <br>Then these bounding boxes are used to prompts for video tracking. \
+                                           <br><b>(2) Video tracking and visual prompting:</b> \
+                                           Leveraging the bounding boxes as input prompts, we use the <a href=\"https://github.com/facebookresearch/sam2\">Segment Anything 2 (SAM2)</a> to track objects throughout the video.\
+                                           <br>The tracking results are annotated to the keyframes as visual prompts to aid the subsequent VLM reasoning module. \
+                                           ";
+                  // imageElement.classList.remove('hidden');
+                  // imageElement.src = "./static/images/Method_2.png";
                   // imageElement.alt = "Image 2";
               } else if (buttonNumber === 3) {
-                  textElement.innerHTML = "<b>3.1 Touch Transform:</b> \
-                                           <br><b>(1) Touch Patch Transformation:</b> Based on photometric stereo, we can acquire depth and normal of the touch spot, which gives us a dense point cloud. \
-                                           <br><br><b>3.2 Anchor Gaussian Optimization:</b> \
-                                           <br><b>(2) Anchor Gaussian Points:</b> The dense point cloud are added as anchor Gaussian points.\
-                                           <br><b>(3) Optimization:</b> We then apply Gaussian normal supervision to further optimize the 3D Gaussians.";
-                  imageElement.classList.add('hidden');
+                  textElement.innerHTML = "<b>Module 3: Vision Language Model (VLM) Reasoning</b> \
+                                           <br><b>(1) Open vocabulary object recoginition</b>. The VLM is first used to recognize objects in the initial frame for the Visual Perception Module. \
+                                           <br><b>(2) Reason action plans</b>. Then the VLM is used to parse every keyframe for action plans.\
+                                           Specifically, we prompt the VLM to answer questions for each keyframe: what is in the image, whether the hand is operating an object, which is being picked and where is it dropping to.\
+                                           The complete prompts can be found in our paper and the <a href=\"https://github.com/ai4ce/SeeDo\">codebase</a>.\
+                                           <br>The textual robot plans are convereted to codes and executed on robots following the <a href=\"\">Code-as-Policies</a>. ";
+                  // imageElement.classList.add('hidden');
                                            // imageElement.src = "image3.jpg";
                   // imageElement.alt = "Image 3";
               }
           }
-        </script> -->
+        </script>
 
       </div>
     </div>
@@ -431,227 +315,90 @@
 
 <hr>
 
-<!-- More Visualization -->
 <section class="section">
   <div class="container is-max-desktop">
     <div class="columns is-centered has-text-centered">
       <div class="column is-full-width">
         
-        <h2 class="title is-3">More Visualizations</h2>
-        <!-- <center>
-          <button class="btn" id="black_9_button" onclick="switchSlider('black_9')">Black Bunny (9 Views)</button>
-          <button class="btn" id="black_5_button" onclick="switchSlider('black_5')">Black Bunny (5 Views)</button>
-          <button class="btn" id="reflective_9_button" onclick="switchSlider('reflective_9')">Reflective Bunny (9 Views)</button>
-          <button class="btn" id="reflective_5_button" onclick="switchSlider('reflective_5')">Reflective Bunny (5 Views)</button>
-          <button class="btn" id="transparent_9_button" onclick="switchSlider('transparent_9')">Transparent Bunny (9 Views)</button>
-          <button class="btn" id="transparent_5_button" onclick="switchSlider('transparent_5')">Transparent Bunny (5 Views)</button>
-          <button class="btn" id="coke_9_button" onclick="switchSlider('coke_9')">Coke Bottle (9 Views)</button>
-          <button class="btn" id="coke_5_button" onclick="switchSlider('coke_5')">Coke Bottle (5 Views)</button>
-          <br>
-          <br>
-        </center> -->
+        <h2 class="title is-3">Data and demos</h2>
+        <div class="content has-text-justified">
+          <p>
+            We collected a dataset of human demonstration videos in three diverse catogories: <b>vegetable organization</b>, <b>garment organization</b>, and <b>wooden block stacking</b>. 
+          </p>
+          <img src="./static/images/data.jpg" style="width: 55vw; min-width: 330px;" alt="Data Image">
+          <p>
+            Below are the data and corresponding results.
+          </p>
+        </div>
+        <button id="demo_button1" class="btn" onclick="changeVideo(1)">Vegetable Organization</button>
+        <button id="demo_button2" class="btn" onclick="changeVideo(2)">Garment Organization</button>
+        <button id="demo_button3" class="btn" onclick="changeVideo(3)">Wooden Block Stacking</button>
 
-        <!-- <div class="slider-block" id="black_9_block">
-          <div class="sliders-container">
-            <div class="slider-wrapper">
-              <h2>Novel View Synthesis (RGB) </h2>
-              <div id="black_9_rgb"></div>
-            </div>
-            <div class="slider-wrapper">
-              <h2>Ground Truth Comparison (RGB)</h2>
-              <div id="black_9_object"></div>
-            </div>
-          </div>
-          <br>
-          <div class="sliders-container">
-            <div class="slider-wrapper">
-              <h2>Novel View Synthesis (Depth) </h2>
-              <div id="black_9_depth"></div>
-            </div>
-            <div class="slider-wrapper">
-              <h2>Novel View Synthesis (Normal)</h2>
-              <div id="black_9_normal"></div>
-            </div>
-          </div>
-        </div> -->
+        <div class="content has-text-justified"></div>
+          <p id="text-content"> <b>Human demonstration</b><br> 
+            Here is a demonstration video for <b>vegetable organization</b>. The videos illustrate how a human arrange the vegetable toys into specific containers one by one.</p>
+          <center>
+            <video id="video-content1" style="width: 45vw; min-width: 330px;" autoplay muted controls>
+              <source src="./static/videos/vege-human-1.mp4" type="video/mp4">
+            </video>
+            <p id="text-content-between1"> <b>Robot execution</b><br>
+              In this video, the robot executes the vegetable organization task in the same order as the human demonstrates.</p>
+            <video id="video-content2" style="width: 45vw; min-width: 330px;" autoplay muted controls>
+              <source src="./static/videos/vege-robot-1.mp4" type="video/mp4">
+            </video>
+            <!-- <p id="text-content-between2"></p>
+            <video id="video-content3" style="width: 45vw; min-width: 330px;" autoplay muted controls>
+              <source src="./static/videos/video3.mp4" type="video/mp4">
+            </video> -->
+          </center>
+        </div>
 
-        <!-- <div class="slider-block" id="black_5_block">
-          <div class="sliders-container">
-            <div class="slider-wrapper">
-              <h2>Novel View Synthesis (RGB) </h2>
-              <div id="black_5_rgb"></div>
-            </div>
-            <div class="slider-wrapper">
-              <h2>Ground Truth Comparison (RGB)</h2>
-              <div id="black_5_object"></div>
-            </div>
-          </div>
-          <br>
-          <div class="sliders-container">
-            <div class="slider-wrapper">
-              <h2>Novel View Synthesis (Depth) </h2>
-              <div id="black_5_depth"></div>
-            </div>
-            <div class="slider-wrapper">
-              <h2>Novel View Synthesis (Normal)</h2>
-              <div id="black_5_normal"></div>
-            </div>
-          </div>
-        </div> -->
+        <script>
+          document.getElementById('demo_button1').classList.add('active');
+        
+          function changeVideo(buttonNumber) {
+            const textElement = document.getElementById('text-content');
+            const videoElement1 = document.getElementById('video-content1');
+            const videoElement2 = document.getElementById('video-content2');
+            const videoElement3 = document.getElementById('video-content3');
+            const textBetween1 = document.getElementById('text-content-between1');
+            const textBetween2 = document.getElementById('text-content-between2');
+        
+            document.getElementById('demo_button1').classList.remove('active');
+            document.getElementById('demo_button2').classList.remove('active');
+            document.getElementById('demo_button3').classList.remove('active');
 
-        <!-- <script src="https://cdn.knightlab.com/libs/juxtapose/latest/js/juxtapose.min.js"></script>
-        <link rel="stylesheet" href="https://cdn.knightlab.com/libs/juxtapose/latest/css/juxtapose.css">
-        <script src="./static/js/juxtapose-slider.js"></script> <!-- Include your slider.js file -->
-         
-        <!-- <script>
-          // Slider configurations
-          let slider_dict = {
-            black_9: 
-            [
-              {
-                elementId: '#black_9_rgb',
-                images: [
-                  {
-                    src: './static/images/sliders/black_bunny/9_view/FS_black_RGB_13.jpg',
-                    label: 'FusionSense',
-                  },
-                  {
-                    src: './static/images/sliders/black_bunny/9_view/DN_black_RGB_13.jpg',
-                    label: 'DN-Splatter',
-                  }
-                ],
-                options: sliderOptions // You can reference the options defined in slider.js if needed
-              },
-              {
-                elementId: '#black_9_object',
-                images: [
-                  {
-                    src: './static/images/sliders/black_bunny/9_view/FS_black_RGB_13.jpg',
-                    label: 'FusionSense',
-                  },
-                  {
-                    src: './static/images/sliders/black_bunny/9_view/GT_black_RGB_13.png',
-                    label: 'Ground Truth',
-                  }
-                ],
-                options: sliderOptions // Reference the same or a different options object
-              },
-              {
-                elementId: '#black_9_depth',
-                images: [
-                  {
-                    src: './static/images/sliders/black_bunny/9_view/FS_black_depth_13.jpg',
-                    label: 'FusionSense',
-                  },
-                  {
-                    src: './static/images/sliders/black_bunny/9_view/DN_black_depth_13.jpg',
-                    label: 'DN-Splatter',
-                  }
-                ],
-                options: sliderOptions // You can reference the options defined in slider.js if needed
-              },
-              {
-                elementId: '#black_9_normal',
-                images: [
-                  {
-                    src: './static/images/sliders/black_bunny/9_view/FS_black_normal_13.jpg',
-                    label: 'FusionSense',
-                  },
-                  {
-                    src: './static/images/sliders/black_bunny/9_view/DN_black_normal_13.jpg',
-                    label: 'DN-Splatter',
-                  }
-                ],
-                options: sliderOptions // Reference the same or a different options object
-              }
-            ],
-            black_5: 
-            [
-              {
-                elementId: '#black_5_rgb',
-                images: [
-                  {
-                    src: './static/images/sliders/black_bunny/5_view/FS_black_RGB_3.jpg',
-                    label: 'FusionSense',
-                  },
-                  {
-                    src: './static/images/sliders/black_bunny/5_view/DN_black_RGB_3.jpg',
-                    label: 'DN-Splatter',
-                  }
-                ],
-                options: sliderOptions // You can reference the options defined in slider.js if needed
-              },
-              {
-                elementId: '#black_5_object',
-                images: [
-                  {
-                    src: './static/images/sliders/black_bunny/5_view/FS_black_RGB_2.jpg',
-                    label: 'FusionSense',
-                  },
-                  {
-                    src: './static/images/sliders/black_bunny/5_view/GT_black_RGB_2.png',
-                    label: 'Ground Truth',
-                  }
-                ],
-                options: sliderOptions // Reference the same or a different options object
-              },
-              {
-                elementId: '#black_5_depth',
-                images: [
-                  {
-                    src: './static/images/sliders/black_bunny/5_view/FS_black_depth_3.jpg',
-                    label: 'FusionSense',
-                  },
-                  {
-                    src: './static/images/sliders/black_bunny/5_view/DN_black_depth_3.jpg',
-                    label: 'DN-Splatter',
-                  }
-                ],
-                options: sliderOptions // You can reference the options defined in slider.js if needed
-              },
-              {
-                elementId: '#black_5_normal',
-                images: [
-                  {
-                    src: './static/images/sliders/black_bunny/5_view/FS_black_normal_3.jpg',
-                    label: 'FusionSense',
-                  },
-                  {
-                    src: './static/images/sliders/black_bunny/5_view/DN_black_normal_3.jpg',
-                    label: 'DN-Splatter',
-                  }
-                ],
-                options: sliderOptions // Reference the same or a different options object
-              }
-            ],
-          };
-    
-          
-
-          // Function to show the specific div based on button click
-          function switchSlider(block_id) {
-              // Remove 'active' class from all buttons to reset color
-              // buttons.forEach(button => button.classList.remove('active'));
-  
-              // // Add 'active' class to the clicked button to change its color
-              // document.getElementById('button' + divNumber).classList.add('active');
-  
-              // Select all content divs and hide them
-              contentDivs = document.querySelectorAll('.slider-block');
-              contentDivs.forEach(div => {
-                  div.classList.remove('show'); // Hide all divs
-              });
-  
-              // Show the selected div with a fade effect
-              selectedDiv = document.getElementById(block_id+'_block');
-              selectedDiv.classList.add('show');
-
-              if (!selectedDiv.initialized) {
-                initializeSliders(slider_dict[block_id]);
-                selectedDiv.initialized = true;
-              }
+            document.getElementById('demo_button' + buttonNumber).classList.add('active');
+        
+            if (buttonNumber === 1) {
+              textElement.innerHTML = "<b>Human demonstration</b><br> Here is a demonstration video for <b>vegetable organization</b>. The videos illustrate how a human arrange the vegetable toys into specific containers one by one.";
+              videoElement1.src = "./static/videos/vege-human-1.mp4";
+              textBetween1.innerHTML = "<b>Robot execution</b><br> In this video, the robot executes the vegetable organization task in the same order as the human demonstrates.";
+              videoElement2.src = "./static/videos/vege-robot-1.mp4";
+              // textBetween2.innerHTML = "Here,";
+              // videoElement3.src = "./static/videos/vegetable_video3.mp4";
+        
+            } else if (buttonNumber === 2) {
+              textElement.innerHTML = "<b>Human demonstration</b><br> The <b>garment organization</b> demonstration videos display a human placing their garments into specific boxes.";
+              videoElement1.src = "./static/videos/garment-human-1.mp4"; 
+              textBetween1.innerHTML = "<b>Robot execution</b><br> In the robot execution the presented objects are different. The robot follows the same order as the human demonstration on the objects it recognizes.";
+              videoElement2.src = "./static/videos/garment-robot-1.mp4"; 
+              // textBetween2.innerHTML = "In this example, ";
+              // videoElement3.src = "./static/videos/garment_video3.mp4";
+        
+            } else if (buttonNumber === 3) {
+              textElement.innerHTML = "<b>Human demonstration</b><br> For <b>wooden block stacking</b>, the following video demonstrates how a human stacks four blocks.";
+              videoElement1.src = "./static/videos/wooden-human-1.mp4";
+              textBetween1.innerHTML = "<b>Robot execution</b><br> In the robot execution, the robot stacks the same structure following the same order.";
+              videoElement2.src = "./static/videos/wooden-robot-1.mp4";
+              // textBetween2.innerHTML = "In this video, ";
+              // videoElement3.src = "./static/videos/block_video3.mp4";
+            }
+            videoElement1.load();
+            videoElement2.load();
+            videoElement3.load();
           }
-        </script> -->
+        </script>
       </div>
     </div>
   </div>
@@ -697,7 +444,7 @@ Coming Soon
             Commons Attribution-ShareAlike 4.0 International License</a>.
             This webpage template is from <a href="https://github.com/nerfies/nerfies.github.io">Nerfies</a>. 
             We sincerely thank <a href="https://keunhong.com/">Keunhong Park</a> for developing and open-sourcing this template.
-            This website is inspired by the project page of <a href="https://cat3d.github.io/">CAT3D</a> and <a href="https://armlabstanford.github.io/touch-gs">Touch-GS</a>.
+            This website is inspired by the project page of <a href="https://ai4ce.github.io/FusionSense/">FusionSense</a>.
           </p>
         </div>
       </div>

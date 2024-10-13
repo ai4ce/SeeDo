@@ -251,7 +251,7 @@
           <button id="method_button3" class="btn" onclick="changeContent(3)">3. VLM Reasoning</button>
 
           <div class="content has-text-justified">
-            <p id="text-content"> <b>Module 1: Keyframe Selection</b> 
+            <p id="method-text-content"> <b>Module 1: Keyframe Selection</b> 
               <br>We use APIs from the <a href="https://ai.google.dev/edge/mediapipe/solutions/guide">MediaPipe</a> to detect the hand keypoints and calculate the speed of the hand.
               <br>The speed plot is then interpolated to be continous and the valleys are used as the keyframe selections.
             </p>
@@ -264,7 +264,7 @@
         <script>
           document.getElementById('method_button1').classList.add('active');
           function changeContent(buttonNumber) {
-              const textElement = document.getElementById('text-content');
+              const textElement = document.getElementById('method-text-content');
               const imageElement = document.getElementById('image-content');
               
               document.getElementById('method_button1').classList.remove('active');
@@ -335,19 +335,19 @@
         <button id="demo_button3" class="btn" onclick="changeVideo(3)">Wooden Block Stacking</button>
 
         <div class="content has-text-justified"></div>
-          <p id="text-content"> <b>Human demonstration</b><br> 
+          <p id="demo-text-content"> <b>Human demonstration</b><br> 
             Here is a demonstration video for <b>vegetable organization</b>. The videos illustrate how a human arrange the vegetable toys into specific containers one by one.</p>
           <center>
-            <video id="video-content1" style="width: 45vw; min-width: 330px;" autoplay muted controls>
+            <video id="demo-video-content1" style="width: 45vw; min-width: 330px;" autoplay muted controls>
               <source src="./static/videos/vege-human-1.mp4" type="video/mp4">
             </video>
-            <p id="text-content-between1"> <b>Robot execution</b><br>
+            <p id="demo-text-content-between1"> <b>Robot execution</b><br>
               In this video, the robot executes the vegetable organization task in the same order as the human demonstrates.</p>
-            <video id="video-content2" style="width: 45vw; min-width: 330px;" autoplay muted controls>
+            <video id="demo-video-content2" style="width: 45vw; min-width: 330px;" autoplay muted controls>
               <source src="./static/videos/vege-robot-1.mp4" type="video/mp4">
             </video>
-            <!-- <p id="text-content-between2"></p>
-            <video id="video-content3" style="width: 45vw; min-width: 330px;" autoplay muted controls>
+            <!-- <p id="demo-text-content-between2"></p>
+            <video id="demo-video-content3" style="width: 45vw; min-width: 330px;" autoplay muted controls>
               <source src="./static/videos/video3.mp4" type="video/mp4">
             </video> -->
           </center>
@@ -357,12 +357,12 @@
           document.getElementById('demo_button1').classList.add('active');
         
           function changeVideo(buttonNumber) {
-            const textElement = document.getElementById('text-content');
-            const videoElement1 = document.getElementById('video-content1');
-            const videoElement2 = document.getElementById('video-content2');
-            const videoElement3 = document.getElementById('video-content3');
-            const textBetween1 = document.getElementById('text-content-between1');
-            const textBetween2 = document.getElementById('text-content-between2');
+            const textElement = document.getElementById('demo-text-content');
+            const videoElement1 = document.getElementById('demo-video-content1');
+            const videoElement2 = document.getElementById('demo-video-content2');
+            // const videoElement3 = document.getElementById('video-content3');
+            const textBetween1 = document.getElementById('demo-text-content-between1');
+            // const textBetween2 = document.getElementById('demo-text-content-between2');
         
             document.getElementById('demo_button1').classList.remove('active');
             document.getElementById('demo_button2').classList.remove('active');

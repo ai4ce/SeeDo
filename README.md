@@ -6,23 +6,36 @@
 
 ## Setup Instructions
 
-Note that SeeDo relies on GroundingDINO and SAM2.
+Note that SeeDo relies on GroundingDINO, SAM and SAM2. The code has only been tested on Ubuntu 20.04. The version of CUDA tested is 11.8, the Pytorch version is 2.3.1+cu118.
 
 - Install SeeDo and create a new environment
 
 ```python
 git clone https://github.com/ai4ce/SeeDo
-conda create --name seedo python=3.10
-conda activate seedo
+conda create --name SeeDo python=3.10.14
+conda activate SeeDo
 pip install -r requirements.txt
 ```
 
-- Install GroundingDINO and SAM2 in the same environment
+- Install GroundingDINO, SAM and SAM2 in the same environment
 
 ```python
 git clone https://github.com/IDEA-Research/GroundingDINO
-git clone https://github.com/facebookresearch/sam2
+git clone https://github.com/facebookresearch/segment-anything.git
+git clone https://github.com/facebookresearch/segment-anything-2.git
 ```
+
+- Make sure these models are installed in editable packages
+
+```python
+cd GroundingDINO
+pip install -e .
+```
+And do the same with segment-anything, segment-anything-2
+
+- The code still uses one checkpoint from segment-anything
+Make sure you download it in the SeeDo folder.
+**`default` or `vit_h`: [ViT-H SAM model.](https://dl.fbaipublicfiles.com/segment_anything/sam_vit_h_4b8939.pth)**
 
 - Obtain an OpenAI API key and create a `key.py` file under `VLM_CaP/src`
 
@@ -35,7 +48,7 @@ echo 'projectkey = "YOUR_OPENAI_API_KEY"' > key.py
 ## Pipeline
 
 There are mainly four parts of SeeDo. To ensure the video is successfully processed in subsequent steps, use `convert_video.py` to convert the video to the appropriate encoding before inputting it. The `convert_video.py` script accepts two parameters: `--input` and `--output`, which specify the path of your original video and the path of the converted video, respectively.
-*Currently, this repo only supports the code of the first three modules*
+*Currently, this repo only supports the code of the first three modules. We will Release our 3D models for experiments soon.*
 
 1. **Keyframe Selection Module**
 

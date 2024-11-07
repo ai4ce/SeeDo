@@ -40,7 +40,26 @@ pip install -e .
 ```
 And do the same with segment-anything, segment-anything-2
 
-- The code still uses one checkpoint from segment-anything
+- We have slightly modified the GroundingDINO
+
+In `GroundingDINO/groundingdino/util/inference.py`, we add a function to help inference on an array of images. Please paste the following function into `inference.py`.
+
+```python
+def load_image_from_array(image_array: np.array) -> Tuple[np.array, torch.Tensor]:
+    transform = T.Compose(
+        [
+            T.RandomResize([800], max_size=1333),
+            T.ToTensor(),
+            T.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225]),
+        ]
+    )
+    image_source = Image.fromarray(image_array)
+    image_transformed, _ = transform(image_source, None)
+    return image_array, image_transformed
+```
+
+- The code still uses one checkpoint from segment-anything.
+
 Make sure you download it in the SeeDo folder.
 **`default` or `vit_h`: [ViT-H SAM model.](https://dl.fbaipublicfiles.com/segment_anything/sam_vit_h_4b8939.pth)**
 

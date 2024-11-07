@@ -18,6 +18,12 @@ cd SeeDo
 pip install -r requirements.txt
 ```
 
+- Install Pytorch (Only for CUDA 11.8 user)
+
+```python
+pip install torch==2.3.1+cu118 torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
+```
+
 - Install GroundingDINO, SAM and SAM2 in the same environment
 
 ```python

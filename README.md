@@ -12,8 +12,9 @@ Note that SeeDo relies on GroundingDINO, SAM and SAM2. The code has only been te
 
 ```python
 git clone https://github.com/ai4ce/SeeDo
-conda create --name SeeDo python=3.10.14
-conda activate SeeDo
+conda create --name seedo python=3.10.14
+conda activate seedo
+cd SeeDo
 pip install -r requirements.txt
 ```
 

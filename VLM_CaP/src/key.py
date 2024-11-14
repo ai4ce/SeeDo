@@ -1,2 +1,0 @@
-mykey = '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'
-projectkey = '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'

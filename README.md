@@ -74,7 +74,6 @@ echo 'projectkey = "YOUR_OPENAI_API_KEY"' > key.py
 ## Pipeline
 
 There are mainly four parts of SeeDo. To ensure the video is successfully processed in subsequent steps, use `convert_video.py` to convert the video to the appropriate encoding before inputting it. The `convert_video.py` script accepts two parameters: `--input` and `--output`, which specify the path of your original video and the path of the converted video, respectively.
-*Currently, this repo only supports the code of the first three modules. We will Release our 3D models for experiments soon.*
 
 1. **Keyframe Selection Module**
 
@@ -110,8 +109,14 @@ There are mainly four parts of SeeDo. To ensure the video is successfully proces
 
 4. **Robot Manipulation Module**
 
-   `simulation.py`: The `simulation.py` script accepts two parameters: `obj_list` and `action_list`. It first initializes a random simulation scene based on the `obj_list`, and then executes pick-and-place tasks according to the `action_list`. 
+   `simulation.py`: The `simulation.py` script accepts three parameters: `obj_list`, `action_list`, `output`. It first initializes a random simulation scene based on the `obj_list`, and then executes pick-and-place tasks according to the `action_list`, and finally write the video to output.
 
-   Note that this part uses a modified version of the Code as Policies framework, and its successful execution depends heavily on whether the objects are already modeled and whether the corresponding execution functions for actions are present in the prompt. We provide a series of new object models and prompts that are compatible with our defined action list. If you want to operate on unseen objects, you will need to provide the corresponding object modeling.
+   Example usage: `python simulation.py --action_list "put chili on bowl and then put eggplant on glass" --obj_list chili carrot eggplant bowl glass --output demo2.mp4`
+
+   Note that this part uses a modified version of the Code as Policies framework, and its successful execution depends heavily on whether the objects are already modeled and whether the corresponding execution functions for actions are present in the prompt. We provide a series of new object models and prompts that are compatible with our defined action list. If you want to operate on unseen objects, you will need to provide the corresponding object modeling, and modify the LMP and prompt file accordingly.
+
+   We provide some simple object modelings of vegetables on hugging face. Download from https://huggingface.co/datasets/ai4ce/SeeDo/tree/main/SeeDo
+
+   There will be an `assets.zip` file, extract that file into `assets` and make sure this folder is under the path of VLM_CaP. `VLM_CaP/assets` will then be used by `simulation.py` for simulation.
 
    It will write out a video of robot manipulation of a series of pick-and-place tasks in simulation.

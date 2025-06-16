@@ -1,11 +1,12 @@
 # SeeDo: Human Demo Video to Robot Action Plan via Vision Language Model
+<a href='https://arxiv.org/abs/2410.08792'><img src='https://img.shields.io/badge/Paper-arXiv-red'></a> <a href='https://ai4ce.github.io/SeeDo/'><img src='https://img.shields.io/badge/Project-website-green'></a>
 
-**VLM See, Robot Do (SeeDo)** is a method that uses large vision models, tracking models and vision-language models to extract robot action plan from human demonstration video, specifically focusing on long horizon pick-and-place tasks. The action plan is then implemented in realworld and PyBullet simulation environment.
+**VLM See, Robot Do (SeeDo)** is a method that uses large vision models, tracking models and vision-language models to extract robot action plans from human demonstration videos, specifically focusing on long horizon pick-and-place tasks. The action plan is then implemented in real-world and PyBullet simulation environments.
 
 ![main](https://github.com/ai4ce/SeeDo/blob/main/media/main.jpg)
 
 ## News
-- [2025/06] SeeDo is accepted by IROS 2025!
+- [2025/06] SeeDo is accepted by IROS 2025! We will update the camera-ready version soon.
 
 ## Setup Instructions
 

@@ -4,6 +4,9 @@
 
 ![main](https://github.com/ai4ce/SeeDo/blob/main/media/main.jpg)
 
+## News
+- [2025/06] SeeDo is accepted by IROS 2025!
+
 ## Setup Instructions
 
 Note that SeeDo relies on GroundingDINO, SAM and SAM2. The code has only been tested on Ubuntu 20.04. The version of CUDA tested is 11.8, the Pytorch version is 2.3.1+cu118.

@@ -119,6 +119,20 @@ There are mainly four parts of SeeDo. To ensure the video is successfully proces
 
    Note that this part uses a modified version of the Code as Policies framework, and its successful execution depends heavily on whether the objects are already modeled and whether the corresponding execution functions for actions are present in the prompt. We provide a series of new object models and prompts that are compatible with our defined action list. If you want to operate on unseen objects, you will need to provide the corresponding object modeling, and modify the LMP and prompt file accordingly.
 
+## Automated Evaluation Script
+We provide a automated evaluation script `evaluation_script.py` to avoid redundant manual labor.
+
+The parameter `csv` indicates the script can only process and output csv files.
+
+`--gt_csv`: The path to the csv file of ground truth task plans
+
+`--ans_csv`: The path to the csv file of task plans from SeeDo
+
+`--out_csv`: Output file with SSR scores for each task
+
+
+## Open-source Dataset
+
    We provide some simple object modelings of vegetables on hugging face. Download from https://huggingface.co/datasets/ai4ce/SeeDo/tree/main/SeeDo
 
    There will be an `assets.zip` file, extract that file into `assets` and make sure this folder is under the path of VLM_CaP. `VLM_CaP/assets` will then be used by `simulation.py` for simulation.
